@@ -54,7 +54,19 @@ marketplace.visualstudio.com/manage/publishers/outlinenode
 | 5 | 中文 IME 真机手感、undo 粒度手感、与文本编辑器并排编辑体验 | 自动化测不出 |
 | 6 | 「外部 refresh patch < 50ms」红线余量仅几毫秒 | 已缓解未根治 |
 | 7 | `demo.gif` 由测试 harness 录制，无 VS Code 窗口边框 | 可选改进 |
+| 7b | **插件 UI 只有中文**，但商店描述与 README 是英文 | 已知，暂不处理 |
 | 8 | `10-publishing.md` 第 7 节「发布后」：README 加 Marketplace badge、开 Issues 模板与 Discussions | 未做 |
+
+### UI 语言（第 7b 条的细节）
+
+webview 与扩展宿主的用户可见文案全部是中文，会出现在商店首屏的 `demo.gif` 里：搜索框 placeholder `搜索节点…`、面包屑根 `全部`，另有 `点击创建第一个节点`、`复制为镜像链接`、`展开`/`折叠`、`断链引用`/`循环引用`、`OutlineNode: 没有活动的文本编辑器。` 等，散落在 `webview/search.ts`、`webview/zoom.ts`、`webview/nodeView.ts`、`webview/main.ts`、`extension/extension.ts`。
+
+**2026-07-24 决定：暂不处理。** 若以后要做，两条路：
+
+1. **全改英文**，不做 i18n。改动小，不碰协议，和商店页语言一致。
+2. **真正的 i18n**（跟随 VS Code 语言）。webview 拿不到 locale，需要往 `EditorConfig` 加 `locale` 字段下发——这是**协议改动**（`04-protocol.md` / `shared/protocol.ts`），按项目约定必须先确认。
+
+在此之前，英文 README 沿用中文内容的 `demo.gif`：UI 本来就是中文，换成英文内容反而会让人误以为界面是英文的。
 
 ### Open VSX 的前置条件（若要补）
 
