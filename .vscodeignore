@@ -1,16 +1,9 @@
-.vscode/**
-.github/**
-src/**
-test/**
-docs/**
-node_modules/**
-*.vsix
-esbuild.mjs
-eslint.config.mjs
-vitest.config.ts
-playwright.config.ts
-test-results/**
-playwright-report/**
-tsconfig*.json
-AGENTS.md
-.gitignore
+# 白名单式：默认全部排除，只放行发布必需的文件（见 docs/10）。
+# package.json 由 vsce 强制包含；LICENSE 不会，必须显式放行。
+**
+
+!dist/**
+!media/icon.png
+!README.md
+!CHANGELOG.md
+!LICENSE

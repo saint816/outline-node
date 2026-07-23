@@ -1,0 +1,58 @@
+name: Release
+
+# push tag v* → 全量测试通过后发布到 Marketplace 与 Open VSX（见 docs/10）
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # 全量测试：和 CI 同一套，发布前不降标准
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - run: xvfb-run -a node ./test/integration/runTest.mjs
+
+      # tag 必须与 package.json 的 version 一致，否则发错版本
+      - name: Check tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag v$TAG 与 package.json version $PKG 不一致" >&2
+            exit 1
+          fi
+
+      - run: npx vsce package --no-dependencies
+
+      - name: Publish to VS Code Marketplace
+        run: npx vsce publish --no-dependencies -p "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      # Open VSX 是可选的（覆盖 VSCodium / Cursor）；没配 token 就跳过
+      - name: Publish to Open VSX
+        if: ${{ env.OVSX_PAT != '' }}
+        run: npx ovsx publish *.vsix -p "$OVSX_PAT"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+      - name: Attach vsix to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.vsix'
+          generate_release_notes: true

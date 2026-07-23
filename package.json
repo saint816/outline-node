@@ -1,10 +1,23 @@
 {
-  "name": "outlinenode",
-  "displayName": "OutlineNode",
-  "description": "Workflowy-style outliner for VS Code, backed by plain Markdown files.",
-  "version": "0.0.1",
+  "name": "outline-node",
+  "displayName": "OutlineNode — Workflowy-style Outliner",
+  "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
+  "version": "0.1.0",
   "license": "MIT",
-  "private": true,
+  "publisher": "outlinenode",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/REPLACE_ME_OWNER/outline-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/REPLACE_ME_OWNER/outline-node/issues"
+  },
+  "homepage": "https://github.com/REPLACE_ME_OWNER/outline-node#readme",
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0",
     "node": ">=20"
@@ -16,9 +29,11 @@
   "keywords": [
     "outliner",
     "workflowy",
+    "outline",
     "markdown",
-    "notes",
-    "obsidian"
+    "obsidian",
+    "logseq",
+    "notes"
   ],
   "main": "./dist/extension.js",
   "scripts": {
@@ -29,7 +44,7 @@
     "test": "vitest run",
     "test:webview": "npm run build && playwright test",
     "test:integration": "npm run build && node ./test/integration/runTest.mjs",
-    "package": "vsce package"
+    "package": "npm run build && vsce package --no-dependencies"
   },
   "contributes": {
     "customEditors": [
@@ -97,9 +112,11 @@
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.24.0",
     "eslint": "^9.17.0",
     "fast-check": "^3.23.0",
+    "ovsx": "^1.0.2",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.18.0",
     "vitest": "^2.1.0"

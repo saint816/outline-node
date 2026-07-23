@@ -29,7 +29,7 @@ function tempFile(name, content) {
 }
 
 function api() {
-  const ext = vscode.extensions.all.find((e) => e.id.toLowerCase().endsWith('.outlinenode'));
+  const ext = vscode.extensions.all.find((e) => e.id.toLowerCase().endsWith('.outline-node'));
   assert.ok(ext, 'extension not found');
   return ext.exports;
 }
