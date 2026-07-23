@@ -2,12 +2,15 @@
 // 本模块不直接操作 DOM，也不直接 postMessage 之外的事；编辑语义一律走 core/ops。
 
 import type { OutlineDoc, OutlineNode } from '../core/model.js';
+import { nodeKeys } from '../core/nodeKey.js';
 import { applyOp, locate, type Op } from '../core/ops.js';
 import type { DocSnapshot, EditorConfig, H2W, W2H } from '../shared/protocol.js';
 
 const SET_TEXT_DEBOUNCE_MS = 300;
 /** 连续输入超过这个时长强制 flush，限制丢失窗口与 undo 步长。 */
 const MAX_PENDING_MS = 1000;
+/** 折叠变化上报节流（见 docs/06）。 */
+const SAVE_FOLDING_THROTTLE_MS = 2000;
 
 export class Store {
   private current: OutlineDoc = emptyDoc();
@@ -18,6 +21,11 @@ export class Store {
   private timer: number | null = null;
   private firstPendingAt = 0;
   private readonly listeners: (() => void)[] = [];
+
+  // ---------- UI 状态（折叠 / zoom；红线 3：只在内存与 workspaceState，绝不落用户文件） ----------
+  private readonly folded = new Set<string>();
+  private zoomRootId: string | null = null;
+  private foldingTimer: number | null = null;
 
   config: EditorConfig | null = null;
 
@@ -55,11 +63,137 @@ export class Store {
     return at > 0 ? order[at - 1] : null;
   }
 
+  // ---------- 折叠 ----------
+
+  get foldedIds(): ReadonlySet<string> {
+    return this.folded;
+  }
+
+  isFolded(id: string): boolean {
+    return this.folded.has(id);
+  }
+
+  toggleFold(id: string): void {
+    const node = this.findNode(id);
+    if (!node || node.children.length === 0) return;
+    if (this.folded.has(id)) this.folded.delete(id);
+    else this.folded.add(id);
+    this.scheduleSaveFolding();
+    this.emit();
+  }
+
+  /** 折叠态挂在内存 id 上，编辑期间永不丢；落盘时才换算成 nodeKey（见 docs/06）。 */
+  flushFolding(): void {
+    if (this.foldingTimer !== null) {
+      clearTimeout(this.foldingTimer);
+      this.foldingTimer = null;
+    }
+    const keys = nodeKeys(this.current.blocks);
+    const foldedKeys: string[] = [];
+    for (const id of this.folded) {
+      const key = keys.get(id);
+      if (key !== undefined) foldedKeys.push(key);
+    }
+    this.flushPending(); // saveFolding 之前先把待发编辑顶出去（见 docs/04）
+    this.send({ type: 'saveFolding', foldedKeys });
+  }
+
+  private scheduleSaveFolding(): void {
+    if (this.foldingTimer !== null) return;
+    this.foldingTimer = setTimeout(() => {
+      this.foldingTimer = null;
+      this.flushFolding();
+    }, SAVE_FOLDING_THROTTLE_MS) as unknown as number;
+  }
+
+  /** init 时按 nodeKey 反查节点标记折叠；无记录则按 defaultFold 处理。 */
+  private restoreFolding(foldedKeys: string[]): void {
+    this.folded.clear();
+    if (foldedKeys.length > 0) {
+      const wanted = new Set(foldedKeys);
+      for (const [id, key] of nodeKeys(this.current.blocks)) {
+        if (wanted.has(key)) this.folded.add(id);
+      }
+      return;
+    }
+    if (this.config?.defaultFold !== 'firstLevel') return;
+    for (const block of this.current.blocks) {
+      if (block.kind !== 'list') continue;
+      for (const root of block.roots) if (root.children.length > 0) this.folded.add(root.id);
+    }
+  }
+
+  // ---------- zoom ----------
+
+  get zoomRoot(): string | null {
+    return this.zoomRootId;
+  }
+
+  zoomTo(id: string | null): void {
+    if (id !== null && !this.findNode(id)) return;
+    if (this.zoomRootId === id) return;
+    this.zoomRootId = id;
+    this.emit();
+  }
+
+  /** zoom 根的祖先链（含自身），面包屑用。 */
+  zoomTrail(): OutlineNode[] {
+    if (this.zoomRootId === null) return [];
+    const trail: OutlineNode[] = [];
+    const walk = (nodes: OutlineNode[], path: OutlineNode[]): boolean => {
+      for (const node of nodes) {
+        const next = [...path, node];
+        if (node.id === this.zoomRootId) {
+          trail.push(...next);
+          return true;
+        }
+        if (walk(node.children, next)) return true;
+      }
+      return false;
+    };
+    for (const block of this.current.blocks) {
+      if (block.kind === 'list' && walk(block.roots, [])) break;
+    }
+    return trail;
+  }
+
+  /** 当前可见（未被折叠隐藏、且在 zoom 子树内）的节点，文档先序。 */
+  visibleNodes(): OutlineNode[] {
+    const out: OutlineNode[] = [];
+    const walk = (nodes: readonly OutlineNode[]): void => {
+      for (const node of nodes) {
+        out.push(node);
+        if (!this.folded.has(node.id)) walk(node.children);
+      }
+    };
+    if (this.zoomRootId !== null) {
+      const root = this.findNode(this.zoomRootId);
+      if (root) {
+        out.push(root);
+        if (!this.folded.has(root.id)) walk(root.children);
+        return out;
+      }
+    }
+    for (const block of this.current.blocks) if (block.kind === 'list') walk(block.roots);
+    return out;
+  }
+
+  idForKey(key: string): string | null {
+    for (const [id, candidate] of nodeKeys(this.current.blocks)) {
+      if (candidate === key) return id;
+    }
+    return null;
+  }
+
+  keyForId(id: string): string | null {
+    return nodeKeys(this.current.blocks).get(id) ?? null;
+  }
+
   // ---------- host → webview ----------
 
   applyInit(msg: Extract<H2W, { type: 'init' }>): void {
     this.config = msg.config;
-    this.reset(msg.snapshot, msg.version);
+    this.reset(msg.snapshot, msg.version, () => this.restoreFolding(msg.foldedKeys));
   }
 
   applyRefresh(msg: Extract<H2W, { type: 'refresh' }>): void {
@@ -73,12 +207,16 @@ export class Store {
     if (this.pending.length > 0) this.flushPending();
   }
 
-  private reset(snapshot: DocSnapshot, version: number): void {
+  private reset(snapshot: DocSnapshot, version: number, afterSwap?: () => void): void {
     this.current = fromSnapshot(snapshot);
     this.baseVersion = version;
     this.pending = [];
     this.inFlight = false;
     this.clearTimer();
+    afterSwap?.();
+    // 外部修改走 treeMatch 复用旧 id，折叠/zoom 自然存活；只清理已消失的 id
+    for (const id of [...this.folded]) if (!this.findNode(id)) this.folded.delete(id);
+    if (this.zoomRootId !== null && !this.findNode(this.zoomRootId)) this.zoomRootId = null;
     this.emit();
   }
 

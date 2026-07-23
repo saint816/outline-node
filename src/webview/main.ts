@@ -7,6 +7,7 @@ import { ime, installImeGuard } from './ime.js';
 import { handleKeydown } from './keymap.js';
 import { Renderer } from './renderer.js';
 import { Store } from './store.js';
+import { Breadcrumb } from './zoom.js';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
@@ -15,6 +16,8 @@ declare function acquireVsCodeApi(): {
 };
 
 interface ViewState {
+  /** 存 nodeKey 而非 id：id 不跨 session（见 docs/05 热恢复）。 */
+  zoomRootKey: string | null;
   scrollTop: number;
 }
 
@@ -24,6 +27,10 @@ const root = document.getElementById('outline-root') as HTMLElement;
 const send = (msg: W2H): void => vscode.postMessage(msg);
 const store = new Store(send);
 const renderer = new Renderer(root);
+const breadcrumb = new Breadcrumb((id) => {
+  store.zoomTo(id);
+});
+root.parentElement?.insertBefore(breadcrumb.el, root);
 
 let nextCaret: CaretPos | null = null;
 let ready = false;
@@ -33,9 +40,14 @@ let ready = false;
 function render(): void {
   const caret = nextCaret ?? saveCaret();
   nextCaret = null;
-  renderer.patch({ blocks: store.doc.blocks, indentUnit: store.doc.indentUnit });
+  renderer.patch(
+    { blocks: store.doc.blocks, indentUnit: store.doc.indentUnit },
+    { folded: store.foldedIds, zoomRootId: store.zoomRoot },
+  );
+  breadcrumb.update(store.zoomTrail());
   syncPlaceholder();
   if (caret) restoreCaret(caret);
+  saveViewState();
 }
 
 store.onChange(render);
@@ -157,10 +169,28 @@ root.addEventListener('keydown', (event) => {
   });
 });
 
+// 点击交互（事件委托，不给每节点绑监听器，见 docs/07）
+root.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const id = target.closest<HTMLElement>('.node')?.dataset.id;
+  if (!id) return;
+  if (target.closest('.toggle')) {
+    event.preventDefault();
+    store.toggleFold(id);
+  } else if (target.closest('.bullet')) {
+    event.preventDefault();
+    store.zoomTo(id);
+  }
+});
+
 // 失焦 / 页面隐藏时立即 flush，缩小丢失窗口
 root.addEventListener('focusout', () => store.flushPending(), true);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') store.flushPending();
+  if (document.visibilityState === 'hidden') {
+    store.flushPending();
+    store.flushFolding();
+  }
 });
 
 installImeGuard(root, {
@@ -175,15 +205,22 @@ installImeGuard(root, {
 window.addEventListener('scroll', () => saveViewState(), { passive: true });
 
 function saveViewState(): void {
-  const state: ViewState = { scrollTop: window.scrollY };
+  const zoomRoot = store.zoomRoot;
+  const state: ViewState = {
+    zoomRootKey: zoomRoot === null ? null : store.keyForId(zoomRoot),
+    scrollTop: window.scrollY,
+  };
   vscode.setState(state);
 }
 
 function restoreViewState(): void {
   const state = vscode.getState() as ViewState | undefined;
-  if (state && typeof state.scrollTop === 'number') {
-    window.scrollTo({ top: state.scrollTop });
+  if (!state) return;
+  if (typeof state.zoomRootKey === 'string') {
+    const id = store.idForKey(state.zoomRootKey);
+    if (id) store.zoomTo(id);
   }
+  if (typeof state.scrollTop === 'number') window.scrollTo({ top: state.scrollTop });
 }
 
 send({ type: 'ready' });

@@ -6,6 +6,7 @@ import type { OutlineNode } from '../core/model.js';
 export interface UpdateOptions {
   /** 该节点正在被编辑（focus 在内且文本未变 / IME 组合中）→ 不碰它的文本 DOM。 */
   skipText: boolean;
+  folded: boolean;
 }
 
 export class NodeView {
@@ -17,7 +18,7 @@ export class NodeView {
   private badgeEl: HTMLElement | null = null;
   private noteEl: HTMLElement | null = null;
 
-  constructor(node: OutlineNode) {
+  constructor(node: OutlineNode, opts: { folded: boolean }) {
     this.el = div('node');
     this.el.dataset.id = node.id;
 
@@ -41,11 +42,15 @@ export class NodeView {
     this.childrenEl = div('children');
     this.el.append(this.row, this.childrenEl);
 
-    this.update(node, { skipText: false });
+    this.update(node, { skipText: false, folded: opts.folded });
   }
 
   update(node: OutlineNode, opts: UpdateOptions): void {
     if (this.el.dataset.id !== node.id) this.el.dataset.id = node.id;
+
+    this.toggleEl.setAttribute('aria-expanded', opts.folded ? 'false' : 'true');
+    this.toggleEl.setAttribute('aria-label', opts.folded ? '展开' : '折叠');
+    this.el.classList.toggle('folded', opts.folded);
 
     if (!opts.skipText && this.textEl.textContent !== node.text) {
       this.textEl.textContent = node.text;

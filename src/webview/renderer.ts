@@ -7,32 +7,54 @@ import { NodeView, createRawBlockView, updateRawBlockView } from './nodeView.js'
 
 export interface PatchOptions {
   dirtyIds?: Set<string>;
+  /** 折叠的节点 id：其子树根本不构建 DOM（不是 display:none，见 docs/07）。 */
+  folded?: ReadonlySet<string>;
+  /** 非 null 时只渲染该子树（zoom）。 */
+  zoomRootId?: string | null;
 }
+
+const NO_FOLDS: ReadonlySet<string> = new Set<string>();
 
 export class Renderer {
   private readonly nodes = new Map<string, NodeView>();
   private readonly rawBlocks = new Map<string, HTMLElement>();
   private readonly listBlocks = new Map<string, HTMLElement>();
+  private zoomContainer: HTMLElement | null = null;
+  private folded: ReadonlySet<string> = NO_FOLDS;
 
   constructor(private readonly root: HTMLElement) {}
 
-  patch(doc: DocSnapshot, _opts: PatchOptions = {}): void {
+  patch(doc: DocSnapshot, opts: PatchOptions = {}): void {
+    this.folded = opts.folded ?? NO_FOLDS;
     const seenNodes = new Set<string>();
-    const desired: HTMLElement[] = [];
+    const zoomRoot = opts.zoomRootId ? findNode(doc.blocks, opts.zoomRootId) : null;
 
-    for (const block of doc.blocks) {
-      desired.push(this.patchBlock(block, seenNodes));
+    let desired: HTMLElement[];
+    if (zoomRoot) {
+      // zoom 状态下其余部分完全不在 DOM（见 docs/07）
+      const container = this.ensureZoomContainer();
+      this.patchNodes(container, [zoomRoot], seenNodes);
+      desired = [container];
+    } else {
+      desired = doc.blocks.map((block) => this.patchBlock(block, seenNodes));
     }
     reorder(this.root, desired);
 
-    // 回收已消失的节点/块，避免 keyed map 泄漏
+    this.recycle(seenNodes, zoomRoot ? new Set<string>() : new Set(doc.blocks.map((b) => b.id)));
+  }
+
+  elementFor(id: string): HTMLElement | null {
+    return this.nodes.get(id)?.el ?? null;
+  }
+
+  /** 回收已消失（含被折叠而不再挂载）的节点与块，避免 keyed map 泄漏。 */
+  private recycle(seenNodes: Set<string>, liveBlocks: Set<string>): void {
     for (const [id, view] of this.nodes) {
       if (!seenNodes.has(id)) {
         view.el.remove();
         this.nodes.delete(id);
       }
     }
-    const liveBlocks = new Set(doc.blocks.map((b) => b.id));
     for (const [id, el] of this.rawBlocks) {
       if (!liveBlocks.has(id)) {
         el.remove();
@@ -47,8 +69,12 @@ export class Renderer {
     }
   }
 
-  elementFor(id: string): HTMLElement | null {
-    return this.nodes.get(id)?.el ?? null;
+  private ensureZoomContainer(): HTMLElement {
+    if (this.zoomContainer === null) {
+      this.zoomContainer = document.createElement('div');
+      this.zoomContainer.className = 'list-block zoomed';
+    }
+    return this.zoomContainer;
   }
 
   private patchBlock(block: Block, seen: Set<string>): HTMLElement {
@@ -78,19 +104,41 @@ export class Renderer {
 
     for (const node of nodes) {
       seen.add(node.id);
+      const folded = this.folded.has(node.id);
       let view = this.nodes.get(node.id);
       if (!view) {
-        view = new NodeView(node);
+        view = new NodeView(node, { folded });
         this.nodes.set(node.id, view);
       } else {
-        view.update(node, { skipText: shouldSkipText(view, node) });
+        view.update(node, { skipText: shouldSkipText(view, node), folded });
       }
       desired.push(view.el);
-      this.patchNodes(view.childrenEl, node.children, seen);
+
+      // 折叠子树不构建 DOM：不访问 children → 它们不会进 seen → 由 recycle 卸载
+      if (!folded) this.patchNodes(view.childrenEl, node.children, seen);
+      else if (view.childrenEl.firstChild) view.childrenEl.replaceChildren();
     }
 
     reorder(container, desired);
   }
+}
+
+function findNode(blocks: readonly Block[], id: string): OutlineNode | null {
+  for (const block of blocks) {
+    if (block.kind !== 'list') continue;
+    const hit = search(block.roots, id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function search(nodes: readonly OutlineNode[], id: string): OutlineNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const hit = search(node.children, id);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 /**
@@ -120,7 +168,6 @@ function reorder(container: HTMLElement, desired: readonly HTMLElement[]): void 
     }
     container.insertBefore(el, cursor);
   }
-  // 多余的尾部元素由调用方按 id 回收（这里只摘掉不在 desired 里的直接子节点）
   while (cursor !== null) {
     const next = cursor.nextSibling;
     if (!desired.includes(cursor as HTMLElement)) container.removeChild(cursor);

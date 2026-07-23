@@ -7,7 +7,7 @@ import { applyOp } from '../core/ops.js';
 import { parseOutline } from '../core/parser.js';
 import { serializeOutline } from '../core/serializer.js';
 import { matchTrees } from '../core/treeMatch.js';
-import { toSnapshot, type EditorConfig, type H2W, type W2H } from '../shared/protocol.js';
+import { toSnapshot, type DocSnapshot, type EditorConfig, type H2W, type W2H } from '../shared/protocol.js';
 import type { FoldingStore, UriLike } from './foldingStore.js';
 
 /**
@@ -45,6 +45,11 @@ export class DocumentSession {
     private readonly config: EditorConfig,
   ) {
     this.mirrorDoc = this.parse(host.getText());
+  }
+
+  /** 当前权威树的快照（webview 之外只有集成测试会用）。 */
+  snapshot(): DocSnapshot {
+    return toSnapshot(this.mirrorDoc);
   }
 
   async handleMessage(msg: W2H): Promise<void> {

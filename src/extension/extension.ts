@@ -1,12 +1,18 @@
 import * as vscode from 'vscode';
 import type { IndentUnit } from '../core/model.js';
 import type { EditorConfig } from '../shared/protocol.js';
+import type { DocumentSession } from './documentSession.js';
 import { FoldingStore } from './foldingStore.js';
 import { OutlineEditorProvider } from './outlineEditorProvider.js';
 
 const VIEW_TYPES = ['outlineNode.outline', 'outlineNode.outlineOptional'] as const;
 
-export function activate(context: vscode.ExtensionContext): void {
+/** 扩展导出的 API：目前只服务集成测试，不对用户暴露命令。 */
+export interface OutlineNodeApi {
+  getSession(uri: string): DocumentSession | undefined;
+}
+
+export function activate(context: vscode.ExtensionContext): OutlineNodeApi {
   const folding = new FoldingStore(context.workspaceState);
 
   // customEditors 的 priority 按 entry 生效，因此两个 viewType 注册到同一个 provider（见 docs/01）
@@ -30,6 +36,8 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.commands.executeCommand('vscode.openWith', uri, 'outlineNode.outlineOptional');
     }),
   );
+
+  return { getSession: (uri) => provider.sessions.get(uri) };
 }
 
 export function deactivate(): void {

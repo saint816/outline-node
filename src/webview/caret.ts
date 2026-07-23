@@ -29,22 +29,9 @@ export function saveCaret(): CaretPos | null {
 export function restoreCaret(pos: CaretPos): boolean {
   const editable = findEditable(pos.nodeId, pos.field);
   if (!editable) return false;
-
-  const textNode = firstTextNode(editable);
-  const length = textNode?.textContent?.length ?? 0;
-  const offset = Math.max(0, Math.min(pos.offset, length));
-
-  const range = document.createRange();
-  if (textNode) range.setStart(textNode, offset);
-  else range.setStart(editable, 0);
-  range.collapse(true);
-
-  const selection = window.getSelection();
-  if (!selection) return false;
-  selection.removeAllRanges();
-  selection.addRange(range);
-  if (document.activeElement !== editable) editable.focus({ preventScroll: true });
-  return true;
+  const ok = placeCaretAtOffset(editable, pos.offset);
+  if (ok && document.activeElement !== editable) editable.focus({ preventScroll: true });
+  return ok;
 }
 
 export function focusNode(nodeId: string, field: 'text' | 'note' = 'text', offset = 0): boolean {
@@ -62,34 +49,133 @@ export function activeEditable(): HTMLElement | null {
   return active instanceof HTMLElement && active.dataset.field ? active : null;
 }
 
+// ---------- 跨节点上下移动（↑/↓） ----------
+
+/** 光标的屏幕矩形（折叠选区也能拿到零宽矩形）。 */
+export function caretRect(): DOMRect | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0 && rect.top === 0) return null;
+  return rect;
+}
+
+/** 光标是否在该可编辑元素的首/末视觉行（文本换行时也成立）。 */
+export function atFirstVisualLine(editable: HTMLElement): boolean {
+  const rect = caretRect();
+  if (!rect) return true;
+  const box = editable.getBoundingClientRect();
+  return rect.top - box.top < Math.max(rect.height, 1) / 2;
+}
+
+export function atLastVisualLine(editable: HTMLElement): boolean {
+  const rect = caretRect();
+  if (!rect) return true;
+  const box = editable.getBoundingClientRect();
+  return box.bottom - rect.bottom < Math.max(rect.height, 1) / 2;
+}
+
+/**
+ * 把光标放到目标可编辑元素的首行/末行，横向尽量保持在 preferredX。
+ * SPEC-GAP: docs/05 只说「列尽量保持」，没给算法；这里用 caretRangeFromPoint 命中同一
+ * 横坐标，命中不了就退化到行首/行尾。
+ */
+export function placeCaretAtLine(editable: HTMLElement, preferredX: number, atEnd: boolean): void {
+  editable.focus({ preventScroll: true });
+  const box = editable.getBoundingClientRect();
+  const y = atEnd ? box.bottom - 2 : box.top + 2;
+  const fromPoint = document.caretRangeFromPoint?.(preferredX, y);
+
+  const selection = window.getSelection();
+  if (!selection) return;
+  if (fromPoint && editable.contains(fromPoint.startContainer)) {
+    selection.removeAllRanges();
+    selection.addRange(fromPoint);
+    return;
+  }
+  const length = editable.textContent?.length ?? 0;
+  placeCaretAtOffset(editable, atEnd ? length : 0);
+}
+
 function closestEditable(node: Node): HTMLElement | null {
   const start = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement);
   return start?.closest<HTMLElement>('[data-field]') ?? null;
 }
 
+/**
+ * 按 innerText 语义遍历：文本节点算自身长度，<br> 算一个换行符。
+ * 多行 note 是 text + <br> 的混合，只看第一个文本节点会把换行后的偏移全算错。
+ */
+function contentNodes(editable: HTMLElement): Node[] {
+  const out: Node[] = [];
+  const walker = document.createTreeWalker(editable, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  let current = walker.nextNode();
+  while (current !== null) {
+    if (current.nodeType === Node.TEXT_NODE || (current as HTMLElement).tagName === 'BR') {
+      out.push(current);
+    }
+    current = walker.nextNode();
+  }
+  return out;
+}
+
 function offsetWithin(editable: HTMLElement, focusNode: Node, focusOffset: number): number {
   if (focusNode === editable) {
-    // 选区落在元素本身：focusOffset 是子节点序号，折算成其前面所有文本的长度
+    // 选区落在元素本身：focusOffset 是子节点序号，折算成其前面所有内容的长度
     let total = 0;
     for (let i = 0; i < focusOffset && i < editable.childNodes.length; i++) {
-      total += editable.childNodes[i].textContent?.length ?? 0;
+      const child = editable.childNodes[i];
+      total += (child as HTMLElement).tagName === 'BR' ? 1 : (child.textContent?.length ?? 0);
     }
     return total;
   }
   let total = 0;
-  const walker = document.createTreeWalker(editable, NodeFilter.SHOW_TEXT);
-  let current = walker.nextNode();
-  while (current !== null) {
-    if (current === focusNode) return total + focusOffset;
-    total += current.textContent?.length ?? 0;
-    current = walker.nextNode();
+  for (const node of contentNodes(editable)) {
+    if (node === focusNode) return total + focusOffset;
+    total += node.nodeType === Node.TEXT_NODE ? (node.textContent?.length ?? 0) : 1;
   }
   return total;
 }
 
-function firstTextNode(el: HTMLElement): Text | null {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  return walker.nextNode() as Text | null;
+/** 把光标放到该可编辑元素的第 offset 个字符处（offset 按 innerText 语义 clamp）。 */
+function placeCaretAtOffset(editable: HTMLElement, offset: number): boolean {
+  const selection = window.getSelection();
+  if (!selection) return false;
+
+  const range = document.createRange();
+  let remaining = Math.max(0, offset);
+  let placed = false;
+
+  for (const node of contentNodes(editable)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const length = node.textContent?.length ?? 0;
+      if (remaining <= length) {
+        range.setStart(node, remaining);
+        placed = true;
+        break;
+      }
+      remaining -= length;
+    } else {
+      if (remaining === 0) {
+        range.setStartBefore(node);
+        placed = true;
+        break;
+      }
+      remaining -= 1;
+    }
+  }
+
+  if (!placed) {
+    const last = contentNodes(editable).at(-1);
+    if (last && last.nodeType === Node.TEXT_NODE) range.setStart(last, last.textContent?.length ?? 0);
+    else if (last) range.setStartAfter(last);
+    else range.setStart(editable, 0);
+  }
+
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
 }
 
 function cssEscape(value: string): string {

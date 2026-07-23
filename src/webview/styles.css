@@ -146,6 +146,63 @@ body {
   border-left-color: var(--vscode-editorIndentGuide-background, var(--vscode-panel-border));
 }
 
+/* 折叠：子树根本不挂载 DOM（见 docs/07），这里只给个「里面还有内容」的视觉提示 */
+.node.folded > .node-row > .bullet::before {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--vscode-descriptionForeground) 45%, transparent);
+}
+
+/* ---------- zoom ---------- */
+
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 0 auto 8px;
+  max-width: 900px;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.crumb {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: var(--vscode-textLink-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.crumb:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.crumb.current {
+  color: var(--vscode-descriptionForeground);
+  cursor: default;
+}
+
+.crumb-sep {
+  opacity: 0.6;
+}
+
+/* zoom 根自身显示为页面标题（仍是同一个可编辑节点） */
+.zoomed > .node > .node-row > .text {
+  font-size: 1.5em;
+  font-weight: 600;
+}
+
+.zoomed > .node > .node-row > .bullet,
+.zoomed > .node > .node-row > .toggle {
+  visibility: hidden;
+}
+
+.zoomed > .node > .children {
+  margin-left: 0;
+  border-left: none;
+}
+
 /* ---------- 非列表内容 ---------- */
 
 .raw-block {

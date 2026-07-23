@@ -3,7 +3,15 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'out/**', '*.vsix'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'out/**',
+      '*.vsix',
+      '.vscode-test/**',
+      'test-results/**',
+      'playwright-report/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -31,11 +39,30 @@ export default tseslint.config(
     },
   },
   {
-    files: ['test/**/*.ts', 'esbuild.mjs', 'vitest.config.ts'],
+    files: ['test/**/*.ts', 'test/**/*.mjs', 'esbuild.mjs', 'vitest.config.ts'],
     languageOptions: {
       globals: { process: 'readonly', console: 'readonly' },
     },
     rules: {
+      '@typescript-eslint/no-non-null-assertion': 'off',
+    },
+  },
+  {
+    // 集成测试用例由 VS Code 以 CommonJS require 加载
+    files: ['test/integration/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        require: 'readonly',
+        module: 'writable',
+        exports: 'writable',
+        process: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },

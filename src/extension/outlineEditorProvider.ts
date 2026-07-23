@@ -9,6 +9,9 @@ import type { FoldingStore } from './foldingStore.js';
  * 业务消息一律转交 DocumentSession（见 docs/01 模块职责表）。
  */
 export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
+  /** uri → 该文档当前的 session。集成测试用它注入编辑消息（见 docs/09 第 4 节）。 */
+  readonly sessions = new Map<string, DocumentSession>();
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly folding: FoldingStore,
@@ -32,6 +35,7 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
       this.folding,
       this.readConfig(),
     );
+    this.sessions.set(document.uri.toString(), session);
 
     const subscriptions = [
       webview.onDidReceiveMessage((raw: unknown) => {
@@ -46,6 +50,9 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     ];
 
     webviewPanel.onDidDispose(() => {
+      if (this.sessions.get(document.uri.toString()) === session) {
+        this.sessions.delete(document.uri.toString());
+      }
       session.dispose();
       for (const sub of subscriptions) sub.dispose();
     });
