@@ -2,6 +2,32 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- VS Code 会往 webview 注入这些变量；harness 里补一份（暗色主题取值），
+         否则 var(--vscode-*) 无回退会让整条声明失效，测不出真实样式。 -->
+    <style>
+      :root {
+        --vscode-font-family: system-ui, sans-serif;
+        --vscode-font-size: 13px;
+        --vscode-editor-font-family: ui-monospace, monospace;
+        --vscode-editor-background: #1f1f1f;
+        --vscode-editor-foreground: #cccccc;
+        --vscode-editorCursor-foreground: #aeafad;
+        --vscode-descriptionForeground: #9d9d9d;
+        --vscode-focusBorder: #0078d4;
+        --vscode-textLink-foreground: #4daafc;
+        --vscode-badge-background: #616161;
+        --vscode-input-background: #313131;
+        --vscode-input-foreground: #cccccc;
+        --vscode-input-border: #3c3c3c;
+        --vscode-list-hoverBackground: #2a2d2e;
+        --vscode-toolbar-hoverBackground: #383a49;
+        --vscode-panel-border: #2b2b2b;
+        --vscode-editorIndentGuide-background: #404040;
+        --vscode-textCodeBlock-background: #2b2b2b;
+        --vscode-editor-inactiveSelectionBackground: #3a3d41;
+        --vscode-editor-findMatchHighlightBackground: #9e6a03;
+      }
+    </style>
     <link rel="stylesheet" href="../../dist/webview.css" />
     <title>OutlineNode webview harness</title>
   </head>

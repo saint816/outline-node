@@ -4,6 +4,6 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "include": ["test/unit/**/*.ts", "src/**/*.ts", "vitest.config.ts"],
-  "exclude": ["src/webview/**/*.ts"]
+  "include": ["test/unit/**/*.ts", "test/perf/**/*.ts", "src/**/*.ts", "vitest.config.ts"],
+  "exclude": ["src/webview/**/*.ts", "test/perf/**/*.spec.ts"]
 }

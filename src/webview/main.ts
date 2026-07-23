@@ -46,7 +46,7 @@ const EMPTY_FOLDS: ReadonlySet<string> = new Set<string>();
 function render(): void {
   const caret = nextCaret ?? saveCaret();
   nextCaret = null;
-  renderer.patch(
+  const result = renderer.patch(
     { blocks: store.doc.blocks, indentUnit: store.doc.indentUnit },
     {
       // 搜索时把折叠视作展开，否则命中项藏在折叠子树里根本看不到
@@ -59,6 +59,8 @@ function render(): void {
   syncPlaceholder();
   if (caret) restoreCaret(caret);
   saveViewState();
+  // 首帧分片：剩下的节点下一帧继续挂（见 docs/07）
+  if (result.truncated) requestAnimationFrame(render);
 }
 
 store.onChange(render);

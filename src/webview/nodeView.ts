@@ -7,6 +7,8 @@ export interface UpdateOptions {
   /** 该节点正在被编辑（focus 在内且文本未变 / IME 组合中）→ 不碰它的文本 DOM。 */
   skipText: boolean;
   folded: boolean;
+  /** 树深度（0 起），转成 aria-level（1 起）。 */
+  depth: number;
 }
 
 export class NodeView {
@@ -18,9 +20,10 @@ export class NodeView {
   private badgeEl: HTMLElement | null = null;
   private noteEl: HTMLElement | null = null;
 
-  constructor(node: OutlineNode, opts: { folded: boolean }) {
+  constructor(node: OutlineNode, opts: { folded: boolean; depth: number }) {
     this.el = div('node');
     this.el.dataset.id = node.id;
+    this.el.setAttribute('role', 'treeitem');
 
     this.row = div('node-row');
     this.toggleEl = document.createElement('button');
@@ -37,17 +40,21 @@ export class NodeView {
     this.textEl.spellcheck = false;
     this.textEl.dataset.field = 'text';
     this.textEl.setAttribute('role', 'textbox');
+    this.textEl.setAttribute('aria-multiline', 'false');
 
     this.row.append(this.toggleEl, bullet, this.textEl);
     this.childrenEl = div('children');
+    this.childrenEl.setAttribute('role', 'group');
     this.el.append(this.row, this.childrenEl);
 
-    this.update(node, { skipText: false, folded: opts.folded });
+    this.update(node, { skipText: false, folded: opts.folded, depth: opts.depth });
   }
 
   update(node: OutlineNode, opts: UpdateOptions): void {
     if (this.el.dataset.id !== node.id) this.el.dataset.id = node.id;
 
+    this.el.setAttribute('aria-level', String(opts.depth + 1));
+    this.el.setAttribute('aria-selected', 'false');
     this.toggleEl.setAttribute('aria-expanded', opts.folded ? 'false' : 'true');
     this.toggleEl.setAttribute('aria-label', opts.folded ? '展开' : '折叠');
     this.el.classList.toggle('folded', opts.folded);

@@ -289,3 +289,40 @@ body {
   color: var(--vscode-descriptionForeground);
   cursor: text;
 }
+
+/* ---------- 可达性 ---------- */
+
+.toggle:focus-visible,
+.crumb:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+/* 高对比度主题：强制颜色模式下靠系统色保证可见性，别依赖背景色差 */
+@media (forced-colors: active) {
+  .text:focus,
+  .note:focus {
+    outline: 2px solid Highlight;
+  }
+
+  .searching .node.search-hit > .node-row {
+    outline: 1px solid Highlight;
+    background: none;
+  }
+
+  .drop-indicator {
+    background: Highlight;
+  }
+
+  .bullet::before {
+    background: CanvasText;
+  }
+}
+
+/* 尊重系统的减少动效设置 */
+@media (prefers-reduced-motion: reduce) {
+  .toggle {
+    transition: none;
+  }
+}

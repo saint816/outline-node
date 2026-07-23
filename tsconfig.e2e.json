@@ -5,5 +5,5 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["test/webview/**/*.ts", "playwright.config.ts"]
+  "include": ["test/webview/**/*.ts", "test/perf/**/*.spec.ts", "playwright.config.ts"]
 }

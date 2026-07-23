@@ -13,7 +13,17 @@ export interface PatchOptions {
   zoomRootId?: string | null;
 }
 
+export interface PatchResult {
+  /** 首帧分片：本次没挂完，调用方应在下一帧再 patch 一次（见 docs/07）。 */
+  truncated: boolean;
+}
+
 const NO_FOLDS: ReadonlySet<string> = new Set<string>();
+
+/** 首帧同步挂载的节点数上限；其余分片追加，大文件不白屏。 */
+const FIRST_CHUNK = 200;
+/** 后续每帧再挂多少个。 */
+const NEXT_CHUNK = 600;
 
 export class Renderer {
   private readonly nodes = new Map<string, NodeView>();
@@ -21,11 +31,16 @@ export class Renderer {
   private readonly listBlocks = new Map<string, HTMLElement>();
   private zoomContainer: HTMLElement | null = null;
   private folded: ReadonlySet<string> = NO_FOLDS;
+  /** 本次 patch 还允许新建多少个节点（Infinity = 不限）。 */
+  private budget = Number.POSITIVE_INFINITY;
+  private created = 0;
+  private truncated = false;
 
   constructor(private readonly root: HTMLElement) {}
 
-  patch(doc: DocSnapshot, opts: PatchOptions = {}): void {
+  patch(doc: DocSnapshot, opts: PatchOptions = {}): PatchResult {
     this.folded = opts.folded ?? NO_FOLDS;
+    this.beginBudget();
     const seenNodes = new Set<string>();
     const zoomRoot = opts.zoomRootId ? findNode(doc.blocks, opts.zoomRootId) : null;
 
@@ -40,7 +55,25 @@ export class Renderer {
     }
     reorder(this.root, desired);
 
-    this.recycle(seenNodes, zoomRoot ? new Set<string>() : new Set(doc.blocks.map((b) => b.id)));
+    // 分片挂载期间不回收：还没轮到构建的节点不该被当成「已消失」
+    if (!this.truncated) {
+      this.recycle(seenNodes, zoomRoot ? new Set<string>() : new Set(doc.blocks.map((b) => b.id)));
+    }
+    return { truncated: this.truncated };
+  }
+
+  /**
+   * 首帧只同步挂前 FIRST_CHUNK 个节点，之后每帧再放宽 NEXT_CHUNK（见 docs/07）。
+   * 只在「首次挂载且节点很多」时启用；一旦挂完就恢复无限预算，普通编辑 patch 不受影响。
+   */
+  private beginBudget(): void {
+    this.created = 0;
+    if (this.truncated) {
+      this.budget = NEXT_CHUNK;
+      this.truncated = false;
+      return;
+    }
+    this.budget = this.nodes.size === 0 ? FIRST_CHUNK : Number.POSITIVE_INFINITY;
   }
 
   elementFor(id: string): HTMLElement | null {
@@ -73,6 +106,7 @@ export class Renderer {
     if (this.zoomContainer === null) {
       this.zoomContainer = document.createElement('div');
       this.zoomContainer.className = 'list-block zoomed';
+      this.zoomContainer.setAttribute('role', 'tree');
     }
     return this.zoomContainer;
   }
@@ -93,13 +127,19 @@ export class Renderer {
     if (!el) {
       el = document.createElement('div');
       el.className = 'list-block';
+      el.setAttribute('role', 'tree');
       this.listBlocks.set(block.id, el);
     }
     this.patchNodes(el, block.roots, seen);
     return el;
   }
 
-  private patchNodes(container: HTMLElement, nodes: readonly OutlineNode[], seen: Set<string>): void {
+  private patchNodes(
+    container: HTMLElement,
+    nodes: readonly OutlineNode[],
+    seen: Set<string>,
+    depth = 0,
+  ): void {
     const desired: HTMLElement[] = [];
 
     for (const node of nodes) {
@@ -107,15 +147,21 @@ export class Renderer {
       const folded = this.folded.has(node.id);
       let view = this.nodes.get(node.id);
       if (!view) {
-        view = new NodeView(node, { folded });
+        if (this.created >= this.budget) {
+          this.truncated = true;
+          seen.delete(node.id);
+          break;
+        }
+        this.created++;
+        view = new NodeView(node, { folded, depth });
         this.nodes.set(node.id, view);
       } else {
-        view.update(node, { skipText: shouldSkipText(view, node), folded });
+        view.update(node, { skipText: shouldSkipText(view, node), folded, depth });
       }
       desired.push(view.el);
 
       // 折叠子树不构建 DOM：不访问 children → 它们不会进 seen → 由 recycle 卸载
-      if (!folded) this.patchNodes(view.childrenEl, node.children, seen);
+      if (!folded) this.patchNodes(view.childrenEl, node.children, seen, depth + 1);
       else if (view.childrenEl.firstChild) view.childrenEl.replaceChildren();
     }
 
