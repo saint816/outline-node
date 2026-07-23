@@ -1,6 +1,5 @@
 // keydown → 语义 op（快捷键表见 docs/05）。
 // 本模块只调 store.dispatch / UI 状态变更，不直接 postMessage、不改树。
-// 搜索（Cmd+F）与拖拽相关按键留到 M4。
 
 import {
   atFirstVisualLine,
@@ -22,6 +21,8 @@ export interface KeymapContext {
   requestUndo(): void;
   requestRedo(): void;
   newId(): string;
+  focusSearch(): void;
+  clearSearch(): void;
 }
 
 export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
@@ -36,6 +37,17 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
   }
 
   const mod = e.metaKey || e.ctrlKey;
+
+  // 插件内搜索（不用 VS Code 的 find widget，见 docs/05）
+  if (mod && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault();
+    ctx.focusSearch();
+    return;
+  }
+  if (e.key === 'Escape') {
+    ctx.clearSearch();
+    return;
+  }
 
   // undo 三道闸之二：转发给 host 执行 VS Code 的 undo（红线 5）
   if (mod && (e.key === 'z' || e.key === 'Z')) {

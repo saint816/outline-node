@@ -1,5 +1,10 @@
 /* 全部基于 --vscode-* CSS 变量做主题适配（见 docs/05），禁止硬编码颜色。 */
 
+:root {
+  /* 一级缩进的像素宽度；拖拽用它把水平偏移换算成目标深度 */
+  --outline-indent: 17px;
+}
+
 body {
   margin: 0;
   padding: 12px 24px 40vh;
@@ -138,7 +143,7 @@ body {
 }
 
 .children {
-  margin-left: 17px;
+  margin-left: var(--outline-indent);
   border-left: 1px solid transparent;
 }
 
@@ -201,6 +206,60 @@ body {
 .zoomed > .node > .children {
   margin-left: 0;
   border-left: none;
+}
+
+/* ---------- 搜索 ---------- */
+
+.toolbar {
+  max-width: 900px;
+  margin: 0 auto 8px;
+}
+
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+}
+
+.search-input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+/* 过滤只切 class，不动 DOM 结构（见 docs/07） */
+.node.hidden {
+  display: none;
+}
+
+.searching .node.search-hit > .node-row {
+  background: var(--vscode-editor-findMatchHighlightBackground, var(--vscode-list-hoverBackground));
+}
+
+/* ---------- 拖拽 ---------- */
+
+#outline-root {
+  position: relative;
+}
+
+.node.dragging > .node-row {
+  opacity: 0.4;
+}
+
+.node.dragging .children {
+  opacity: 0.4;
+}
+
+.drop-indicator {
+  position: absolute;
+  height: 2px;
+  right: 0;
+  border-radius: 1px;
+  background: var(--vscode-focusBorder);
+  pointer-events: none;
 }
 
 /* ---------- 非列表内容 ---------- */

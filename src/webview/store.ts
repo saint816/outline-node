@@ -6,6 +6,14 @@ import { nodeKeys } from '../core/nodeKey.js';
 import { applyOp, locate, type Op } from '../core/ops.js';
 import type { DocSnapshot, EditorConfig, H2W, W2H } from '../shared/protocol.js';
 
+export interface VisibleRow {
+  node: OutlineNode;
+  depth: number;
+  parentId: string | null;
+  index: number;
+  blockId: string;
+}
+
 const SET_TEXT_DEBOUNCE_MS = 300;
 /** 连续输入超过这个时长强制 flush，限制丢失窗口与 undo 步长。 */
 const MAX_PENDING_MS = 1000;
@@ -26,6 +34,7 @@ export class Store {
   private readonly folded = new Set<string>();
   private zoomRootId: string | null = null;
   private foldingTimer: number | null = null;
+  private searchQuery = '';
 
   config: EditorConfig | null = null;
 
@@ -159,23 +168,67 @@ export class Store {
 
   /** 当前可见（未被折叠隐藏、且在 zoom 子树内）的节点，文档先序。 */
   visibleNodes(): OutlineNode[] {
-    const out: OutlineNode[] = [];
-    const walk = (nodes: readonly OutlineNode[]): void => {
-      for (const node of nodes) {
-        out.push(node);
-        if (!this.folded.has(node.id)) walk(node.children);
+    return this.visibleRows().map((row) => row.node);
+  }
+
+  /** 可见节点 + 拖拽/键盘需要的位置信息（深度、父 id、在兄弟中的序号、所属 block）。 */
+  visibleRows(): VisibleRow[] {
+    const out: VisibleRow[] = [];
+    const walk = (
+      nodes: readonly OutlineNode[],
+      depth: number,
+      parentId: string | null,
+      blockId: string,
+    ): void => {
+      for (let index = 0; index < nodes.length; index++) {
+        const node = nodes[index];
+        out.push({ node, depth, parentId, index, blockId });
+        // 搜索中把折叠视作展开：否则命中项藏在折叠子树里根本搜不到
+        if (this.searchQuery !== '' || !this.folded.has(node.id)) {
+          walk(node.children, depth + 1, node.id, blockId);
+        }
       }
     };
+
     if (this.zoomRootId !== null) {
-      const root = this.findNode(this.zoomRootId);
-      if (root) {
-        out.push(root);
-        if (!this.folded.has(root.id)) walk(root.children);
+      const found = locate(this.current, this.zoomRootId);
+      if (found) {
+        out.push({
+          node: found.node,
+          depth: 0,
+          parentId: found.parent?.id ?? null,
+          index: found.index,
+          blockId: found.block.id,
+        });
+        if (this.searchQuery !== '' || !this.folded.has(found.node.id)) {
+          walk(found.node.children, 1, found.node.id, found.block.id);
+        }
         return out;
       }
     }
-    for (const block of this.current.blocks) if (block.kind === 'list') walk(block.roots);
+    for (const block of this.current.blocks) {
+      if (block.kind === 'list') walk(block.roots, 0, null, block.id);
+    }
     return out;
+  }
+
+  // ---------- 搜索 ----------
+
+  get query(): string {
+    return this.searchQuery;
+  }
+
+  setSearchQuery(query: string): void {
+    if (this.searchQuery === query) return;
+    this.searchQuery = query;
+    this.emit();
+  }
+
+  /** 节点在树中的位置（父 id + 在兄弟中的序号）。 */
+  locationOf(id: string): { parentId: string | null; index: number } | null {
+    const found = locate(this.current, id);
+    if (!found) return null;
+    return { parentId: found.parent?.id ?? null, index: found.index };
   }
 
   idForKey(key: string): string | null {

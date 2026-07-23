@@ -5,7 +5,10 @@ import { asH2W, type H2W, type W2H } from '../shared/protocol.js';
 import { activeEditable, restoreCaret, saveCaret, type CaretPos } from './caret.js';
 import { ime, installImeGuard } from './ime.js';
 import { handleKeydown } from './keymap.js';
+import { installClipboard } from './clipboard.js';
+import { installDragAndDrop } from './dnd.js';
 import { Renderer } from './renderer.js';
+import { SearchBox, applySearchFilter } from './search.js';
 import { Store } from './store.js';
 import { Breadcrumb } from './zoom.js';
 
@@ -30,10 +33,13 @@ const renderer = new Renderer(root);
 const breadcrumb = new Breadcrumb((id) => {
   store.zoomTo(id);
 });
+const search = new SearchBox((query) => store.setSearchQuery(query));
+root.parentElement?.insertBefore(search.el, root);
 root.parentElement?.insertBefore(breadcrumb.el, root);
 
 let nextCaret: CaretPos | null = null;
 let ready = false;
+const EMPTY_FOLDS: ReadonlySet<string> = new Set<string>();
 
 // ---------- 渲染 ----------
 
@@ -42,8 +48,13 @@ function render(): void {
   nextCaret = null;
   renderer.patch(
     { blocks: store.doc.blocks, indentUnit: store.doc.indentUnit },
-    { folded: store.foldedIds, zoomRootId: store.zoomRoot },
+    {
+      // 搜索时把折叠视作展开，否则命中项藏在折叠子树里根本看不到
+      folded: store.query === '' ? store.foldedIds : EMPTY_FOLDS,
+      zoomRootId: store.zoomRoot,
+    },
   );
+  applySearchFilter(root, store.doc.blocks, store.query);
   breadcrumb.update(store.zoomTrail());
   syncPlaceholder();
   if (caret) restoreCaret(caret);
@@ -166,6 +177,8 @@ root.addEventListener('keydown', (event) => {
     requestUndo: () => send({ type: 'requestUndo' }),
     requestRedo: () => send({ type: 'requestRedo' }),
     newId: () => nanoid(),
+    focusSearch: () => search.focus(),
+    clearSearch: () => search.clear(),
   });
 });
 
@@ -191,6 +204,14 @@ document.addEventListener('visibilitychange', () => {
     store.flushPending();
     store.flushFolding();
   }
+});
+
+installDragAndDrop(root, store);
+installClipboard(root, {
+  store,
+  setNextCaret: (pos) => {
+    nextCaret = pos;
+  },
 });
 
 installImeGuard(root, {
