@@ -205,6 +205,24 @@ test('↑ / ↓ 在节点间移动光标，跳过被折叠的子树', async ({ p
   expect((await caretState(page)).id).toBe('a');
 });
 
+test('move / indent 之后折叠仍保留（折叠挂在内存 id 上，key 不含祖先路径）', async ({
+  page,
+}) => {
+  await openOutline(page, [node('a', 'A', [node('a1', 'A1')]), node('b', 'B')]);
+  await page.locator('.node[data-id="a"] > .node-row > .toggle').click();
+  expect(await textsInDom(page)).toEqual(['A', 'B']);
+
+  await focusText(page, 'a', 0);
+  await page.keyboard.press('Alt+ArrowDown'); // moveDown
+  expect(await textsInDom(page)).toEqual(['B', 'A']);
+  await expect(page.locator('.node[data-id="a1"]')).toHaveCount(0); // 仍折叠
+
+  await inject(page, { type: 'ack', seq: 1, version: 2 });
+  await page.keyboard.press('Tab'); // indent 到 B 下面
+  await expect(page.locator('.node[data-id="b"] > .children > .node[data-id="a"]')).toHaveCount(1);
+  await expect(page.locator('.node[data-id="a1"]')).toHaveCount(0); // 依然折叠
+});
+
 test('外部 refresh 后折叠与 zoom 仍存活（id 被 treeMatch 复用）', async ({ page }) => {
   await openOutline(page, [node('a', 'A', [node('a1', 'A1')]), node('b', 'B', [node('b1', 'B1')])]);
   await page.locator('.node[data-id="b"] > .node-row > .toggle').click();
