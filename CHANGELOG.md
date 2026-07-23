@@ -2,6 +2,12 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.1.1] - 2026-07-24
+
+### Changed
+
+- README 默认语言改为英文（Marketplace 门面与 GitHub 首页），中文版保留在 `README.zh-CN.md`，两边互相链接。
+
 ## [0.1.0] - 2026-07-23
 
 首个公开版本。
