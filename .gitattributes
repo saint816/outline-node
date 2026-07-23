@@ -1,5 +1,6 @@
-# fixture 是字节级 round-trip 的基准，git 绝不能改写其换行符（crlf.md 依赖 CRLF）。
-test/unit/fixtures/** -text
-
-# 其余文本文件统一 LF。
+# 文本文件统一 LF。
 * text=auto eol=lf
+
+# 但 fixture 是字节级 round-trip 的基准，git 绝不能改写其换行符
+# （crlf.md 依赖 CRLF）。gitattributes 取最后一条匹配规则，故必须放在通配之后。
+test/unit/fixtures/** -text
