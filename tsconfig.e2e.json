@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // playwright 测试里 page.evaluate 的回调跑在浏览器上下文，需要 DOM 类型
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["test/webview/**/*.ts", "playwright.config.ts"]
+}

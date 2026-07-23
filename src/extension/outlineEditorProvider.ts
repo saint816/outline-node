@@ -1,14 +1,19 @@
 import * as vscode from 'vscode';
-import type { M0Host2Webview, M0Webview2Host } from '../shared/m0Skeleton.js';
+import type { TextEditSpan } from '../core/lineDiff.js';
+import { asW2H, type EditorConfig, type H2W } from '../shared/protocol.js';
+import { DocumentSession, type SessionHost } from './documentSession.js';
+import type { FoldingStore } from './foldingStore.js';
 
 /**
- * CustomTextEditorProvider：webview HTML / CSP / 生命周期。
- *
- * M0 骨架版：webview 只读显示文档全文。M2 起改为创建 DocumentSession 并把业务消息
- * 全部转交 session（本类不处理业务消息，见 docs/01 模块职责表）。
+ * CustomTextEditorProvider：webview 创建、HTML/CSP、session 生命周期。
+ * 业务消息一律转交 DocumentSession（见 docs/01 模块职责表）。
  */
 export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly folding: FoldingStore,
+    private readonly readConfig: () => EditorConfig,
+  ) {}
 
   resolveCustomTextEditor(
     document: vscode.TextDocument,
@@ -22,21 +27,26 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     };
     webview.html = this.buildHtml(webview);
 
-    const post = (): void => {
-      const msg: M0Host2Webview = { type: 'text', text: document.getText() };
-      void webview.postMessage(msg);
-    };
+    const session = new DocumentSession(
+      createSessionHost(document, webview),
+      this.folding,
+      this.readConfig(),
+    );
 
     const subscriptions = [
-      webview.onDidReceiveMessage((msg: M0Webview2Host) => {
-        if (msg.type === 'ready') post();
+      webview.onDidReceiveMessage((raw: unknown) => {
+        const msg = asW2H(raw);
+        if (msg) void session.handleMessage(msg);
       }),
       vscode.workspace.onDidChangeTextDocument((e) => {
-        if (e.document.uri.toString() === document.uri.toString()) post();
+        if (e.document.uri.toString() !== document.uri.toString()) return;
+        if (e.contentChanges.length === 0) return;
+        session.onDocumentChanged();
       }),
     ];
 
     webviewPanel.onDidDispose(() => {
+      session.dispose();
       for (const sub of subscriptions) sub.dispose();
     });
   }
@@ -71,6 +81,38 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
 </body>
 </html>`;
   }
+}
+
+function createSessionHost(document: vscode.TextDocument, webview: vscode.Webview): SessionHost {
+  return {
+    uri: document.uri,
+    get version(): number {
+      return document.version;
+    },
+    getText: () => document.getText(),
+    applyEdit: async (spans: TextEditSpan[]): Promise<boolean> => {
+      const edit = new vscode.WorkspaceEdit();
+      for (const span of spans) {
+        const range = new vscode.Range(
+          document.positionAt(span.start),
+          document.positionAt(span.end),
+        );
+        edit.replace(document.uri, range, span.text);
+      }
+      return vscode.workspace.applyEdit(edit);
+    },
+    postMessage: (msg: H2W) => {
+      void webview.postMessage(msg);
+    },
+    // undo/redo 完全交给 VS Code：CustomTextEditorProvider 免费提供 TextDocument 的
+    // undo 栈，本项目一行都不自己实现（红线 5）
+    executeUndo: async () => {
+      await vscode.commands.executeCommand('undo');
+    },
+    executeRedo: async () => {
+      await vscode.commands.executeCommand('redo');
+    },
+  };
 }
 
 function makeNonce(): string {

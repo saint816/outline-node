@@ -1,7 +1,12 @@
-// webview bootstrap。
-// M0 骨架版：只读显示文档全文。M2 起接入 store / renderer / keymap 等模块。
+// webview bootstrap：acquireVsCodeApi、消息路由、事件接线、热恢复。
 import './styles.css';
-import type { M0Host2Webview, M0Webview2Host } from '../shared/m0Skeleton.js';
+import { nanoid } from 'nanoid';
+import { asH2W, type H2W, type W2H } from '../shared/protocol.js';
+import { activeEditable, restoreCaret, saveCaret, type CaretPos } from './caret.js';
+import { ime, installImeGuard } from './ime.js';
+import { handleKeydown } from './keymap.js';
+import { Renderer } from './renderer.js';
+import { Store } from './store.js';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
@@ -9,16 +14,176 @@ declare function acquireVsCodeApi(): {
   setState(state: unknown): void;
 };
 
-const vscode = acquireVsCodeApi();
-const root = document.getElementById('outline-root')!;
-const pre = document.createElement('pre');
-pre.className = 'outline-raw';
-root.appendChild(pre);
+interface ViewState {
+  scrollTop: number;
+}
 
-window.addEventListener('message', (event: MessageEvent<M0Host2Webview>) => {
-  const msg = event.data;
-  if (msg.type === 'text') pre.textContent = msg.text;
+const vscode = acquireVsCodeApi();
+const root = document.getElementById('outline-root') as HTMLElement;
+
+const send = (msg: W2H): void => vscode.postMessage(msg);
+const store = new Store(send);
+const renderer = new Renderer(root);
+
+let nextCaret: CaretPos | null = null;
+let ready = false;
+
+// ---------- 渲染 ----------
+
+function render(): void {
+  const caret = nextCaret ?? saveCaret();
+  nextCaret = null;
+  renderer.patch({ blocks: store.doc.blocks, indentUnit: store.doc.indentUnit });
+  syncPlaceholder();
+  if (caret) restoreCaret(caret);
+}
+
+store.onChange(render);
+
+/** 空文档（还没有任何列表）时给一个可点击的落点，否则新文件是一片死白。 */
+function syncPlaceholder(): void {
+  const hasList = store.doc.blocks.some((block) => block.kind === 'list');
+  let placeholder = document.getElementById('outline-placeholder');
+  if (hasList || !ready) {
+    placeholder?.remove();
+    return;
+  }
+  if (placeholder) return;
+  placeholder = document.createElement('div');
+  placeholder.id = 'outline-placeholder';
+  placeholder.className = 'placeholder';
+  placeholder.textContent = '点击创建第一个节点';
+  placeholder.addEventListener('click', createFirstNode);
+  root.append(placeholder);
+}
+
+function createFirstNode(): void {
+  const id = nanoid();
+  nextCaret = { nodeId: id, field: 'text', offset: 0 };
+  store.dispatch({
+    op: 'insertSubtree',
+    parentId: null,
+    index: 0,
+    nodes: [{ id, text: '', checked: null, note: null, blockId: null, mirror: null, children: [], raw: null }],
+  });
+}
+
+// ---------- host → webview ----------
+
+window.addEventListener('message', (event: MessageEvent<unknown>) => {
+  const msg = asH2W(event.data);
+  if (!msg) return;
+
+  switch (msg.type) {
+    case 'init':
+      ready = true;
+      store.applyInit(msg);
+      restoreViewState();
+      return;
+    case 'ack':
+      store.applyAck(msg);
+      return;
+    case 'refresh':
+      // 组合期间绝不触碰正在编辑节点的 DOM：搁置，commit 后再应用（红线 4）
+      if (ime.composing) {
+        ime.pendingRefresh = msg;
+        return;
+      }
+      applyRefresh(msg);
+      return;
+  }
 });
 
-const ready: M0Webview2Host = { type: 'ready' };
-vscode.postMessage(ready);
+function applyRefresh(msg: Extract<H2W, { type: 'refresh' }>): void {
+  // refresh 会丢弃未 ack 的本地 op，把 contenteditable 里尚未提交的文本重新提交一次，
+  // 用户感知几乎无损（见 docs/04）。
+  // SPEC-GAP: docs/04 只对 cause:'conflict' 描述了重提交。external 同样需要——外部写入
+  // 落地时用户可能正在打字（尤其 IME 提交那一刻），不补发就是丢字。唯独 undo 不补发：
+  // undo 的本意就是把这个节点的文本改回去，补发等于立刻撤销这次 undo。
+  const editable = activeEditable();
+  const editingId = editable?.closest<HTMLElement>('.node')?.dataset.id ?? null;
+  const editingField = editable?.dataset.field === 'note' ? 'note' : 'text';
+  const domText = editable === null ? null : editingField === 'note' ? editable.innerText : editable.textContent;
+  const caret = saveCaret();
+
+  store.applyRefresh(msg);
+
+  if (msg.cause !== 'undo' && editingId !== null && domText !== null) {
+    const node = store.findNode(editingId);
+    if (node && editingField === 'text' && node.text !== domText) {
+      store.setNodeText(editingId, domText);
+      nextCaret = caret;
+      render();
+    } else if (node && editingField === 'note' && (node.note ?? '') !== domText) {
+      store.setNodeNote(editingId, domText);
+      nextCaret = caret;
+      render();
+    }
+  }
+}
+
+// ---------- 输入 ----------
+
+root.addEventListener('input', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.dataset.field) return;
+  // 组合期间不发 setText（红线 4）
+  if (ime.composing) return;
+  commitFieldText(target);
+});
+
+function commitFieldText(target: HTMLElement): void {
+  const id = target.closest<HTMLElement>('.node')?.dataset.id;
+  if (!id) return;
+  if (target.dataset.field === 'note') store.setNodeNote(id, target.innerText);
+  else store.setNodeText(id, target.textContent ?? '');
+}
+
+// undo 三道闸之一：封死浏览器原生 undo 栈的一切入口（含右键菜单）
+root.addEventListener('beforeinput', (event) => {
+  const inputType = (event as InputEvent).inputType;
+  if (inputType === 'historyUndo' || inputType === 'historyRedo') event.preventDefault();
+});
+
+root.addEventListener('keydown', (event) => {
+  handleKeydown(event, {
+    store,
+    setNextCaret: (pos) => {
+      nextCaret = pos;
+    },
+    requestUndo: () => send({ type: 'requestUndo' }),
+    requestRedo: () => send({ type: 'requestRedo' }),
+    newId: () => nanoid(),
+  });
+});
+
+// 失焦 / 页面隐藏时立即 flush，缩小丢失窗口
+root.addEventListener('focusout', () => store.flushPending(), true);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') store.flushPending();
+});
+
+installImeGuard(root, {
+  onCommit: (target) => commitFieldText(target),
+  onFlushPendingRefresh: (msg) => {
+    if (msg.type === 'refresh') applyRefresh(msg);
+  },
+});
+
+// ---------- 热恢复 ----------
+
+window.addEventListener('scroll', () => saveViewState(), { passive: true });
+
+function saveViewState(): void {
+  const state: ViewState = { scrollTop: window.scrollY };
+  vscode.setState(state);
+}
+
+function restoreViewState(): void {
+  const state = vscode.getState() as ViewState | undefined;
+  if (state && typeof state.scrollTop === 'number') {
+    window.scrollTo({ top: state.scrollTop });
+  }
+}
+
+send({ type: 'ready' });

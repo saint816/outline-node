@@ -24,10 +24,10 @@
   "scripts": {
     "build": "node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.extension.json --noEmit && tsc -p tsconfig.webview.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "typecheck": "tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.extension.json --noEmit && tsc -p tsconfig.webview.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:webview": "playwright test",
+    "test:webview": "npm run build && playwright test",
     "test:integration": "node ./test/integration/runTest.js",
     "package": "vsce package"
   },
@@ -93,6 +93,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.24.0",

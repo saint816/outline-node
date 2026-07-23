@@ -8,6 +8,9 @@ node_modules/**
 esbuild.mjs
 eslint.config.mjs
 vitest.config.ts
+playwright.config.ts
+test-results/**
+playwright-report/**
 tsconfig*.json
 AGENTS.md
 .gitignore

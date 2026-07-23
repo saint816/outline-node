@@ -1,17 +1,175 @@
-/* 全部基于 --vscode-* CSS 变量做主题适配（见 docs/01、05）。 */
+/* 全部基于 --vscode-* CSS 变量做主题适配（见 docs/05），禁止硬编码颜色。 */
+
 body {
   margin: 0;
-  padding: 12px 16px;
+  padding: 12px 24px 40vh;
   color: var(--vscode-editor-foreground);
   background: var(--vscode-editor-background);
-  font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
-  font-size: var(--vscode-editor-font-size, var(--vscode-font-size));
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
   line-height: 1.6;
 }
 
-.outline-raw {
-  margin: 0;
+#outline-root {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* ---------- 节点 ---------- */
+
+.node {
+  position: relative;
+}
+
+.node-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 1px 0;
+  border-radius: 3px;
+}
+
+.toggle {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 80ms linear;
+}
+
+.toggle::before {
+  content: '▾';
+  font-size: 10px;
+}
+
+.node:hover > .node-row > .toggle,
+.toggle:focus-visible {
+  opacity: 1;
+}
+
+.toggle[aria-expanded='false']::before {
+  content: '▸';
+}
+
+.bullet {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 22px;
+  cursor: grab;
+  position: relative;
+}
+
+.bullet::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vscode-descriptionForeground);
+}
+
+.node.has-children > .node-row > .bullet::before {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--vscode-descriptionForeground) 25%, transparent);
+}
+
+.text,
+.note {
+  flex: 1 1 auto;
+  min-height: 22px;
+  padding: 0 2px;
+  outline: none;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: inherit;
+  caret-color: var(--vscode-editorCursor-foreground);
+}
+
+.text:focus,
+.note:focus {
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.node-row.checked > .text {
+  color: var(--vscode-descriptionForeground);
+  text-decoration: line-through;
+}
+
+.node-row.task > .bullet::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--vscode-descriptionForeground);
+  border-radius: 2px;
+}
+
+.node-row.checked > .bullet::after {
+  background: var(--vscode-descriptionForeground);
+}
+
+.node-row.mirror > .text {
+  font-style: italic;
+  color: var(--vscode-textLink-foreground);
+}
+
+.block-id-badge {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-badge-background);
+}
+
+.note {
+  margin-left: 34px;
+  font-size: 0.92em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.children {
+  margin-left: 17px;
+  border-left: 1px solid transparent;
+}
+
+.node.has-children > .children {
+  border-left-color: var(--vscode-editorIndentGuide-background, var(--vscode-panel-border));
+}
+
+/* ---------- 非列表内容 ---------- */
+
+.raw-block {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+/* 仅含空行的 RawBlock：渲染成细分隔，让被空行拆开的列表在视觉上连续 */
+.raw-block.blank {
+  margin: 0;
+  padding: 0;
+  height: 8px;
+  background: none;
+}
+
+.placeholder {
+  padding: 8px 2px;
+  color: var(--vscode-descriptionForeground);
+  cursor: text;
 }

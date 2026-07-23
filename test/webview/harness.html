@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="../../dist/webview.css" />
+    <title>OutlineNode webview harness</title>
+  </head>
+  <body>
+    <div id="outline-root"></div>
+    <script>
+      // mock acquireVsCodeApi：记录 postMessage，state 存内存
+      window.__posted = [];
+      window.__state = undefined;
+      window.acquireVsCodeApi = function () {
+        return {
+          postMessage: function (msg) {
+            window.__posted.push(msg);
+          },
+          getState: function () {
+            return window.__state;
+          },
+          setState: function (state) {
+            window.__state = state;
+          },
+        };
+      };
+      // 注入 host → webview 消息
+      window.__inject = function (msg) {
+        window.postMessage(msg, '*');
+      };
+    </script>
+    <script src="../../dist/webview.js"></script>
+  </body>
+</html>

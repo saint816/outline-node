@@ -17,6 +17,12 @@ const CHECKBOX_RE = /^\[( |x|X)\] /;
 const BLOCK_ID_RE = / \^([A-Za-z0-9-]+)$/;
 const MIRROR_RE = /^!\[\[#\^([A-Za-z0-9-]+)\]\]$/;
 
+/** 正文恰为 `![[#^id]]` 时返回目标 blockId，否则 null（见 docs/06）。 */
+export function parseMirrorTarget(text: string): string | null {
+  const m = MIRROR_RE.exec(text);
+  return m ? m[1] : null;
+}
+
 interface StackEntry {
   width: number;
   node: OutlineNode;
@@ -185,7 +191,7 @@ function appendListItem(
     content = content.slice(0, content.length - blockIdMatch[0].length);
   }
 
-  const mirrorMatch = MIRROR_RE.exec(content);
+  const mirror = parseMirrorTarget(content);
 
   // 缩进介于两层之间时归入不大于它的最近一层（宽容处理，raw 兜底原文）
   while (list.stack.length > 0 && list.stack[list.stack.length - 1].width >= width) {
@@ -199,7 +205,7 @@ function appendListItem(
     checked,
     note: null,
     blockId,
-    mirror: mirrorMatch ? mirrorMatch[1] : null,
+    mirror,
     children: [],
     raw: { lines: [line], depth },
   };
