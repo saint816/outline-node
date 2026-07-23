@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # 提到 job 级：step 级 env: 在该 step 自己的 if: 里读不到，条件会永远为假
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,17 +43,21 @@ jobs:
 
       - run: npx vsce package --no-dependencies
 
+      # 微软 Marketplace 需要 Azure DevOps PAT。没有 PAT 时这一步跳过，
+      # 改用 publisher 管理页手动上传 .vsix（不需要 Azure 订阅）。
       - name: Publish to VS Code Marketplace
+        if: ${{ env.VSCE_PAT != '' }}
         run: npx vsce publish --no-dependencies -p "$VSCE_PAT"
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-      # Open VSX 是可选的（覆盖 VSCodium / Cursor）；没配 token 就跳过
+      # Open VSX（覆盖 VSCodium / Cursor / Gitpod）。namespace 首次发布前必须存在，
+      # create-namespace 对已存在的 namespace 会报错，故容错继续。
+      - name: Create Open VSX namespace
+        if: ${{ env.OVSX_PAT != '' }}
+        run: npx ovsx create-namespace outlinenode -p "$OVSX_PAT" || true
+
       - name: Publish to Open VSX
         if: ${{ env.OVSX_PAT != '' }}
         run: npx ovsx publish *.vsix -p "$OVSX_PAT"
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
       - name: Attach vsix to GitHub Release
         uses: softprops/action-gh-release@v2
