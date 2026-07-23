@@ -1,47 +1,50 @@
 # OutlineNode
 
-**Workflowy 风格的大纲编辑器，跑在纯本地 Markdown 文件上。**
+**English** · [简体中文](README.zh-CN.md)
+
+**A Workflowy-style outliner for VS Code, running on plain local Markdown files.**
 
 ![OutlineNode demo](media/demo.gif)
 
-你的笔记就是一份标准的 `.md` 缩进列表——Obsidian / Logseq 直接能读，Git diff 干净可读。**没有私有格式，没有账号，没有云端；卸载插件之后文件原样可读。**
+Your notes are just a standard `.md` indented list — Obsidian and Logseq read them directly, and Git diffs stay readable. **No proprietary format, no account, no cloud. Uninstall the extension and your files are still plain Markdown.**
 
-## 功能
+## Features
 
-- **无限层级大纲**：`Enter` 拆分节点、`Tab` / `Shift+Tab` 调整层级、`Backspace` 合并
-- **折叠 / 展开**：折叠状态记在 VS Code 里，**绝不写进你的文件**
-- **Zoom-in**：聚焦任意子树，配面包屑导航
-- **完成标记**：`- [x]`，灰色删除线
-- **节点备注**：`Shift+Enter` 展开第二行，按缩进续行存储
-- **移动与拖拽**：`Alt+↑/↓` 移动，鼠标拖拽可跨层级
-- **实时搜索过滤**：保留祖先链，搜索时自动穿透折叠
-- **镜像引用**：同一节点出现在多处并同步编辑，用的是 Obsidian 原生 `^id` / `![[#^id]]` 块嵌入语法
-- **完整中文 IME 支持**；`undo` / `redo` 直接用 VS Code 原生的，不另造一套
+- **Unlimited nesting** — `Enter` to split, `Tab` / `Shift+Tab` to re-level, `Backspace` to merge
+- **Fold / unfold** — folding state lives in VS Code and is **never written to your files**
+- **Zoom in** — focus any subtree, with breadcrumb navigation
+- **Task checkboxes** — serialized as standard `- [x]`
+- **Node notes** — `Shift+Enter` opens a second line, stored as an indented continuation
+- **Move and drag** — `Alt+↑/↓` moves a whole subtree; drag with the mouse to reorder across levels
+- **Live search filter** — keeps the ancestor chain, sees through folded nodes
+- **Mirror references** — the same node in several places, edited in sync, using Obsidian's native `^id` / `![[#^id]]` block-embed syntax
+- **Full IME support** for Chinese, Japanese and Korean input
+- **Undo / redo** delegated to VS Code's native undo stack — no second history to fight with
 
-## 快捷键
+## Keyboard shortcuts
 
-| 按键 | 作用 |
+| Key | Action |
 |---|---|
-| `Enter` | 光标处拆分节点（在展开的父节点行尾则新建第一个子节点） |
-| `Shift+Enter` | 聚焦 / 创建节点备注；备注内插入换行 |
-| `Tab` / `Shift+Tab` | 缩进 / 反缩进 |
-| `Backspace`（行首） | 与上一个节点合并 |
-| `Alt+↑` / `Alt+↓` | 上移 / 下移节点（带整棵子树） |
-| `Cmd/Ctrl+Enter` | 切换完成状态 |
-| `Alt+→` / `Alt+←` | Zoom in 当前节点 / Zoom out 一级 |
-| `Cmd/Ctrl+.` | 折叠 / 展开当前节点 |
-| `↑` / `↓` | 在首 / 末行时跳到相邻节点 |
-| `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` | 撤销 / 重做（VS Code 原生） |
-| `Cmd/Ctrl+F` | 聚焦大纲内搜索框 |
-| `Esc` | 清除搜索 / 取消拖拽 |
+| `Enter` | Split the node at the caret (at the end of an expanded parent: create its first child) |
+| `Shift+Enter` | Focus / create the node note; insert a newline inside a note |
+| `Tab` / `Shift+Tab` | Indent / outdent |
+| `Backspace` (at line start) | Merge with the previous node |
+| `Alt+↑` / `Alt+↓` | Move the node up / down, children included |
+| `Cmd/Ctrl+Enter` | Toggle done |
+| `Alt+→` / `Alt+←` | Zoom into the current node / zoom out one level |
+| `Cmd/Ctrl+.` | Fold / unfold the current node |
+| `↑` / `↓` | Move to the adjacent node when on the first / last line |
+| `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` | Undo / redo (VS Code native) |
+| `Cmd/Ctrl+F` | Focus the outline search box |
+| `Esc` | Clear the search / cancel a drag |
 
-macOS 用 `Cmd`，Windows / Linux 用 `Ctrl`。
+Use `Cmd` on macOS, `Ctrl` on Windows and Linux.
 
-## 使用
+## Usage
 
-- **`*.outline.md`** 默认用 OutlineNode 打开。
-- 普通 **`*.md`**：编辑器右上角 `⋯` → **Reopen Editor With… → Outline**，或命令面板运行 `OutlineNode: Open as Outline`。
-- 想让某个目录（比如 Obsidian vault 里的 `outlines/`）下所有 `.md` 默认走大纲，用 VS Code 原生的 `workbench.editorAssociations`：
+- **`*.outline.md`** opens in OutlineNode by default.
+- For any other **`*.md`**: click `⋯` in the editor title bar → **Reopen Editor With… → Outline**, or run `OutlineNode: Open as Outline` from the command palette.
+- To make every `.md` under a given folder (say `outlines/` in an Obsidian vault) open as an outline, use VS Code's native `workbench.editorAssociations`:
 
   ```jsonc
   {
@@ -51,44 +54,44 @@ macOS 用 `Cmd`，Windows / Linux 用 `Ctrl`。
   }
   ```
 
-  想改回文本编辑器，把这条删掉即可，文件本身不受任何影响。
+  Remove the entry to go back to the text editor. Your files are untouched either way.
 
-## 与 Obsidian / Logseq 互通
+## Interop with Obsidian / Logseq
 
-文件里存的就是普通的 Markdown 缩进列表：
+What lands on disk is an ordinary Markdown indented list:
 
 ```markdown
-- 本周计划 ^k3f9a2
-  - 写周报
-    - 收集数据
-  - [x] 报销
-    备注写在缩进续行里
-- 引用上面那条：![[#^k3f9a2]]
+- This week ^k3f9a2
+  - Write the weekly report
+    - Collect last week's numbers
+  - [x] File the expense
+    A note lives on an indented continuation line
+- Reference the item above: ![[#^k3f9a2]]
 ```
 
-- **Obsidian**：`^k3f9a2` 是块 id，`![[#^k3f9a2]]` 是块嵌入——在 Obsidian 里打开会真的渲染成嵌入块，语义等价。
-- **Logseq / 其他大纲工具**：缩进列表是通用格式，直接可读。
-- **Git**：一次编辑只产生对应那几行的 diff，不会把整个文件重排。
+- **Obsidian** — `^k3f9a2` is a block id and `![[#^k3f9a2]]` is a block embed, so Obsidian renders it as a real embed. Same meaning on both sides.
+- **Logseq and other outliners** — an indented list is the lingua franca; they read it as-is.
+- **Git** — one edit produces a diff on the lines you edited, not a reflow of the whole file.
 
-## 配置
+## Settings
 
-| 配置项 | 默认值 | 说明 |
+| Setting | Default | Description |
 |---|---|---|
-| `outlineNode.defaultIndent` | `2-space` | 新文件或无法检测缩进时用的缩进单位（`2-space` / `4-space` / `tab`） |
-| `outlineNode.rememberFolding` | `true` | 是否记住折叠状态 |
-| `outlineNode.defaultFold` | `none` | 打开时的默认折叠（`none` / `firstLevel`） |
+| `outlineNode.defaultIndent` | `2-space` | Indent unit for new files, or when it can't be detected (`2-space` / `4-space` / `tab`) |
+| `outlineNode.rememberFolding` | `true` | Remember folding state across sessions |
+| `outlineNode.defaultFold` | `none` | Folding applied when a file opens (`none` / `firstLevel`) |
 
-已有文件的缩进单位从内容里自动检测，不会被配置覆盖。
+For existing files the indent unit is detected from the content and is never overridden by this setting.
 
-## 设计原则
+## Design principles
 
-1. **文件是唯一真相**：TextDocument 就是数据源，undo / 脏标记 / 保存 / 热恢复全部走 VS Code 原生机制。
-2. **最小 diff**：只改你动过的那几行，不「顺手」格式化其余内容；未编辑的行字节级不变。
-3. **UI 状态不落盘**：折叠、zoom、搜索一律存在 VS Code 里，你的 `.md` 永远干净。
+1. **The file is the single source of truth.** The `TextDocument` is the model, so undo, the dirty indicator, saving and hot restore all come from VS Code itself.
+2. **Minimal diffs.** An edit rewrites only the lines it touches — no opportunistic reformatting of the rest of the file, which stays byte-for-byte identical.
+3. **UI state never hits disk.** Folding, zoom and search live in VS Code. Your `.md` stays clean.
 
-## 开发
+## Contributing
 
-参见 [AGENTS.md](AGENTS.md)（贡献者 / 编码 agent 入口）与 [docs/](docs/)（完整技术规格）。
+See [AGENTS.md](AGENTS.md) and [docs/](docs/) for the full technical specification.
 
 ## License
 
