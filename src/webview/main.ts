@@ -7,6 +7,7 @@ import { ime, installImeGuard } from './ime.js';
 import { handleKeydown } from './keymap.js';
 import { installClipboard } from './clipboard.js';
 import { installDragAndDrop } from './dnd.js';
+import { expandMirrors, generateBlockId, mirrorLink, originalIdOf } from './mirror.js';
 import { Renderer } from './renderer.js';
 import { SearchBox, applySearchFilter } from './search.js';
 import { Store } from './store.js';
@@ -46,15 +47,17 @@ const EMPTY_FOLDS: ReadonlySet<string> = new Set<string>();
 function render(): void {
   const caret = nextCaret ?? saveCaret();
   nextCaret = null;
+  // 镜像展开是纯渲染层的事：数据层始终只有一份（见 docs/06）
+  const blocks = expandMirrors(store.doc.blocks);
   const result = renderer.patch(
-    { blocks: store.doc.blocks, indentUnit: store.doc.indentUnit },
+    { blocks, indentUnit: store.doc.indentUnit },
     {
       // 搜索时把折叠视作展开，否则命中项藏在折叠子树里根本看不到
       folded: store.query === '' ? store.foldedIds : EMPTY_FOLDS,
       zoomRootId: store.zoomRoot,
     },
   );
-  applySearchFilter(root, store.doc.blocks, store.query);
+  applySearchFilter(root, blocks, store.query);
   breadcrumb.update(store.zoomTrail());
   syncPlaceholder();
   if (caret) restoreCaret(caret);
@@ -198,6 +201,83 @@ root.addEventListener('click', (event) => {
     store.zoomTo(id);
   }
 });
+
+// 右键菜单：复制为镜像链接（见 docs/06 创建入口）
+root.addEventListener('contextmenu', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const nodeEl = target.closest<HTMLElement>('.node');
+  if (!nodeEl?.dataset.id) return;
+  event.preventDefault();
+  openContextMenu(event.clientX, event.clientY, nodeEl.dataset.id);
+});
+
+function openContextMenu(x: number, y: number, nodeId: string): void {
+  closeContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.id = 'outline-context-menu';
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'context-menu-item';
+  item.textContent = '复制为镜像链接';
+  item.addEventListener('click', () => {
+    copyAsMirrorLink(nodeId);
+    closeContextMenu();
+  });
+
+  menu.append(item);
+  document.body.append(menu);
+  // 菜单内部的 pointerdown 不能关菜单，否则菜单项在收到 click 前就被摘掉了
+  dismissContextMenu = (e: Event): void => {
+    if (menu.contains(e.target as Node)) return;
+    closeContextMenu();
+  };
+  document.addEventListener('pointerdown', dismissContextMenu);
+}
+
+let dismissContextMenu: ((e: Event) => void) | null = null;
+
+function closeContextMenu(): void {
+  if (dismissContextMenu) {
+    document.removeEventListener('pointerdown', dismissContextMenu);
+    dismissContextMenu = null;
+  }
+  document.getElementById('outline-context-menu')?.remove();
+}
+
+/** 必要时先 assignBlockId，再把 `![[#^id]]` 写进剪贴板。 */
+function copyAsMirrorLink(rawId: string): void {
+  const id = originalIdOf(rawId);
+  const node = store.findNode(id);
+  if (!node) return;
+
+  let blockId = node.blockId;
+  if (blockId === null) {
+    blockId = generateBlockId(store.doc.blocks);
+    store.dispatch({ op: 'assignBlockId', id, blockId });
+  }
+  void writeClipboard(mirrorLink(blockId));
+}
+
+async function writeClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // webview 里 clipboard 权限可能被拒，退回 execCommand
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
+  }
+}
 
 // 失焦 / 页面隐藏时立即 flush，缩小丢失窗口
 root.addEventListener('focusout', () => store.flushPending(), true);

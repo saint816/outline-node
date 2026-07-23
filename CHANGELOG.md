@@ -12,3 +12,4 @@
 - M3 大纲功能：折叠（子树不挂载 DOM）+ `core/nodeKey.ts` 持久化 + treeMatch 折叠存活、Alt+↑↓ 移动、Cmd/Ctrl+Enter 完成态、Shift+Enter 节点备注、zoom + 面包屑 + `setState` 热恢复、↑↓ 跨节点移动光标；@vscode/test-electron 集成测试。
 - M4 搜索 + 拖拽：实时过滤（祖先链保留、只切 class、搜索时穿透折叠）、pointer 拖拽排序（指示线、水平偏移定深度、边缘自动滚动、Esc 取消）、剪贴板（粘贴缩进列表还原层级、复制/剪切子树为 markdown）。
 - M5 性能与打磨：首帧 rAF 分片挂载、5000 节点基准入 CI（parse/首帧/击键/patch 四项红线）、ARIA tree 语义与 focus 环、高对比度与减少动效媒体查询、样式零硬编码颜色核查。
+- M6 镜像引用：`assignBlockId` op、渲染层展开镜像视图（复合 id + 编辑归一到原节点）、环检测与断链降级、右键「复制为镜像链接」。

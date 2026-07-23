@@ -3,7 +3,7 @@
 
 import { nanoid } from 'nanoid';
 import { parseMirrorTarget } from './parser.js';
-import type { ListBlock, OutlineDoc, OutlineNode } from './model.js';
+import { forEachNode, type ListBlock, type OutlineDoc, type OutlineNode } from './model.js';
 
 export type Op =
   | { op: 'setText'; id: string; text: string }
@@ -17,7 +17,8 @@ export type Op =
   | { op: 'move'; id: string; parentId: string | null; index: number }
   | { op: 'toggleChecked'; id: string }
   | { op: 'insertSubtree'; parentId: string | null; index: number; nodes: OutlineNode[] }
-  | { op: 'delete'; id: string };
+  | { op: 'delete'; id: string }
+  | { op: 'assignBlockId'; id: string; blockId: string };
 
 export interface OpResult {
   changed: boolean; // false = no-op（如首节点 indent）
@@ -61,6 +62,8 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult {
       return insertSubtree(doc, op.parentId, op.index, op.nodes);
     case 'delete':
       return remove(doc, op.id);
+    case 'assignBlockId':
+      return assignBlockId(doc, op.id, op.blockId);
   }
 }
 
@@ -154,6 +157,23 @@ function writeText(node: OutlineNode, text: string): void {
   node.text = text;
   node.mirror = parseMirrorTarget(text);
   node.raw = null;
+}
+
+/** 镜像功能的前置步骤（见 docs/06）：文档内已存在同名 blockId → no-op。 */
+function assignBlockId(doc: OutlineDoc, id: string, blockId: string): OpResult {
+  const found = locate(doc, id);
+  if (!found) return NO_OP;
+  if (found.node.blockId === blockId) return NO_OP;
+
+  let duplicate = false;
+  forEachNode(doc.blocks, (node) => {
+    if (node.blockId === blockId) duplicate = true;
+  });
+  if (duplicate) return NO_OP;
+
+  found.node.blockId = blockId;
+  found.node.raw = null;
+  return CHANGED;
 }
 
 // ---------- 结构类 op ----------

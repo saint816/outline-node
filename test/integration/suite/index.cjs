@@ -150,6 +150,33 @@ test('折叠状态写入 workspaceState，不写进 markdown 文件', async () =
   assert.equal(fs.readFileSync(uri.fsPath, 'utf8'), '- parent\n  - child\n');
 });
 
+test('镜像：编辑原节点只改原行，引用行字节不动；assignBlockId 写入行尾 ^id', async () => {
+  const uri = tempFile('mirror.outline.md', '- 写周报 ^k3f9a2\n  - 收集数据\n- 本周\n  - ![[#^k3f9a2]]\n');
+  const { document, session } = await openOutline(uri);
+
+  await session.handleMessage({
+    type: 'edit',
+    baseVersion: document.version,
+    seq: 1,
+    ops: [{ op: 'setText', id: nodeByText(session, '写周报').id, text: '写月报' }],
+  });
+  await waitFor(() => document.getText().includes('写月报'), 'source edited');
+  // 引用行原样保留：Obsidian 里仍然是同一个块嵌入
+  assert.equal(document.getText(), '- 写月报 ^k3f9a2\n  - 收集数据\n- 本周\n  - ![[#^k3f9a2]]\n');
+
+  await session.handleMessage({
+    type: 'edit',
+    baseVersion: document.version,
+    seq: 2,
+    ops: [{ op: 'assignBlockId', id: nodeByText(session, '本周').id, blockId: 'abc123' }],
+  });
+  await waitFor(() => document.getText().includes('^abc123'), 'blockId assigned');
+  assert.equal(
+    document.getText(),
+    '- 写月报 ^k3f9a2\n  - 收集数据\n- 本周 ^abc123\n  - ![[#^k3f9a2]]\n',
+  );
+});
+
 // ---------- 运行 ----------
 
 exports.run = async function run() {

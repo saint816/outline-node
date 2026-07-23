@@ -3,6 +3,7 @@
 import type { Block, OutlineNode } from '../core/model.js';
 import type { DocSnapshot } from '../shared/protocol.js';
 import { ime } from './ime.js';
+import { originalIdOf, type ViewNode } from './mirror.js';
 import { NodeView, createRawBlockView, updateRawBlockView } from './nodeView.js';
 
 export interface PatchOptions {
@@ -144,7 +145,8 @@ export class Renderer {
 
     for (const node of nodes) {
       seen.add(node.id);
-      const folded = this.folded.has(node.id);
+      // 折叠态挂在数据层 id 上：镜像视图与原视图共享同一份折叠状态
+      const folded = this.folded.has(originalIdOf(node.id));
       let view = this.nodes.get(node.id);
       if (!view) {
         if (this.created >= this.budget) {
@@ -153,10 +155,16 @@ export class Renderer {
           break;
         }
         this.created++;
-        view = new NodeView(node, { folded, depth });
+        view = new NodeView(node, { folded, depth, mirrorState: mirrorStateOf(node) });
         this.nodes.set(node.id, view);
       } else {
-        view.update(node, { skipText: shouldSkipText(view, node), folded, depth });
+        view.update(node, {
+          skipText: shouldSkipText(view, node),
+          folded,
+          depth,
+          mirrorState: mirrorStateOf(node),
+          ignoredChildren: (node as ViewNode).ignoredChildren === true,
+        });
       }
       desired.push(view.el);
 
@@ -167,6 +175,10 @@ export class Renderer {
 
     reorder(container, desired);
   }
+}
+
+function mirrorStateOf(node: OutlineNode): ViewNode['mirrorState'] {
+  return (node as ViewNode).mirrorState ?? 'none';
 }
 
 function findNode(blocks: readonly Block[], id: string): OutlineNode | null {

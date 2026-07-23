@@ -290,6 +290,70 @@ body {
   cursor: text;
 }
 
+/* ---------- 镜像引用 ---------- */
+
+/* 展开出来的镜像视图：可编辑，改动落到原节点 */
+.node.mirror-view > .node-row > .bullet::before {
+  box-shadow: 0 0 0 2px var(--vscode-textLink-foreground);
+}
+
+.node.mirror-broken > .node-row > .text,
+.node.mirror-cycle > .node-row > .text {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  text-decoration: underline dotted;
+}
+
+.mirror-hint {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-badge-background);
+}
+
+.node.has-ignored-children > .node-row::after {
+  content: '⚠';
+  align-self: center;
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---------- 右键菜单 ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 10;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--vscode-menu-foreground, var(--vscode-editor-foreground));
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+}
+
 /* ---------- 可达性 ---------- */
 
 .toggle:focus-visible,

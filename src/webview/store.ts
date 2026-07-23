@@ -4,6 +4,7 @@
 import type { OutlineDoc, OutlineNode } from '../core/model.js';
 import { nodeKeys } from '../core/nodeKey.js';
 import { applyOp, locate, type Op } from '../core/ops.js';
+import { hasMirrors, originalIdOf } from './mirror.js';
 import type { DocSnapshot, EditorConfig, H2W, W2H } from '../shared/protocol.js';
 
 export interface VisibleRow {
@@ -35,6 +36,8 @@ export class Store {
   private zoomRootId: string | null = null;
   private foldingTimer: number | null = null;
   private searchQuery = '';
+  /** 参与镜像（被 ![[#^id]] 引用的子树）的数据 id，随文档变化重算。 */
+  private mirroredIds: Set<string> | null = null;
 
   config: EditorConfig | null = null;
 
@@ -52,13 +55,18 @@ export class Store {
     this.listeners.push(listener);
   }
 
+  /**
+   * 镜像视图里的 DOM id 是复合 id（`${mirrorNodeId}/${originalId}`，见 docs/06）。
+   * store 的公共入口统一归一到数据层 id——这样「编辑同步零成本」：镜像视图里的编辑
+   * 落到同一份数据，下一次 patch 两个视图自然一致。
+   */
   findNode(id: string): OutlineNode | null {
-    return locate(this.current, id)?.node ?? null;
+    return locate(this.current, originalIdOf(id))?.node ?? null;
   }
 
   /** 文档先序里的前一个节点（同一 ListBlock 内），用于 Backspace 合并的落点计算。 */
   previousNode(id: string): OutlineNode | null {
-    const found = locate(this.current, id);
+    const found = locate(this.current, originalIdOf(id));
     if (!found) return null;
     const order: OutlineNode[] = [];
     const walk = (nodes: OutlineNode[]): void => {
@@ -68,7 +76,7 @@ export class Store {
       }
     };
     walk(found.block.roots);
-    const at = order.findIndex((n) => n.id === id);
+    const at = order.findIndex((n) => n.id === originalIdOf(id));
     return at > 0 ? order[at - 1] : null;
   }
 
@@ -79,10 +87,11 @@ export class Store {
   }
 
   isFolded(id: string): boolean {
-    return this.folded.has(id);
+    return this.folded.has(originalIdOf(id));
   }
 
-  toggleFold(id: string): void {
+  toggleFold(rawId: string): void {
+    const id = originalIdOf(rawId);
     const node = this.findNode(id);
     if (!node || node.children.length === 0) return;
     if (this.folded.has(id)) this.folded.delete(id);
@@ -138,7 +147,8 @@ export class Store {
     return this.zoomRootId;
   }
 
-  zoomTo(id: string | null): void {
+  zoomTo(rawId: string | null): void {
+    const id = rawId === null ? null : originalIdOf(rawId);
     if (id !== null && !this.findNode(id)) return;
     if (this.zoomRootId === id) return;
     this.zoomRootId = id;
@@ -226,7 +236,7 @@ export class Store {
 
   /** 节点在树中的位置（父 id + 在兄弟中的序号）。 */
   locationOf(id: string): { parentId: string | null; index: number } | null {
-    const found = locate(this.current, id);
+    const found = locate(this.current, originalIdOf(id));
     if (!found) return null;
     return { parentId: found.parent?.id ?? null, index: found.index };
   }
@@ -239,7 +249,7 @@ export class Store {
   }
 
   keyForId(id: string): string | null {
-    return nodeKeys(this.current.blocks).get(id) ?? null;
+    return nodeKeys(this.current.blocks).get(originalIdOf(id)) ?? null;
   }
 
   // ---------- host → webview ----------
@@ -266,6 +276,7 @@ export class Store {
     this.pending = [];
     this.inFlight = false;
     this.clearTimer();
+    this.mirroredIds = null;
     afterSwap?.();
     // 外部修改走 treeMatch 复用旧 id，折叠/zoom 自然存活；只清理已消失的 id
     for (const id of [...this.folded]) if (!this.findNode(id)) this.folded.delete(id);
@@ -276,9 +287,11 @@ export class Store {
   // ---------- webview → host ----------
 
   /** 结构性 op：先 flush 待发的 setText，本地乐观更新后立即发送。 */
-  dispatch(op: Op): boolean {
+  dispatch(rawOp: Op): boolean {
+    const op = normalizeOp(rawOp);
     this.flushPending();
     if (!applyOp(this.current, op).changed) return false;
+    this.mirroredIds = null;
     this.pending.push(op);
     this.flushPending();
     this.emit();
@@ -289,20 +302,34 @@ export class Store {
    * 文本输入：本地乐观更新 + 防抖发送。
    * 刻意不触发重渲染——DOM 里已经是用户刚敲进去的内容，再 patch 只会打断输入与光标。
    */
-  setNodeText(id: string, text: string): void {
+  setNodeText(rawId: string, text: string): void {
+    const id = originalIdOf(rawId);
     if (!applyOp(this.current, { op: 'setText', id, text }).changed) return;
+    this.emitIfMirrored(id);
     const last = this.pending[this.pending.length - 1];
     if (last && last.op === 'setText' && last.id === id) last.text = text;
     else this.pending.push({ op: 'setText', id, text });
     this.scheduleFlush();
   }
 
-  setNodeNote(id: string, note: string | null): void {
+  setNodeNote(rawId: string, note: string | null): void {
+    const id = originalIdOf(rawId);
     if (!applyOp(this.current, { op: 'setNote', id, note }).changed) return;
+    this.emitIfMirrored(id);
     const last = this.pending[this.pending.length - 1];
     if (last && last.op === 'setNote' && last.id === id) last.note = note;
     else this.pending.push({ op: 'setNote', id, note });
     this.scheduleFlush();
+  }
+
+  /**
+   * 打字热路径默认不重渲染（DOM 已是用户敲进去的内容）。但如果这个节点还出现在某个
+   * 镜像视图里，另一个视图必须跟着变——只有这种情况才补一次 patch，正在编辑的节点
+   * 会被 renderer 的「第一原则」跳过，光标不受影响。
+   */
+  private emitIfMirrored(id: string): void {
+    if (this.mirroredIds === null) this.mirroredIds = computeMirroredIds(this.current);
+    if (this.mirroredIds.has(id)) this.emit();
   }
 
   /** 立即发送待发队列（结构 op 前、blur、Ctrl/Cmd+Z、隐藏页面时调用）。 */
@@ -341,6 +368,47 @@ export class Store {
   private emit(): void {
     for (const listener of this.listeners) listener();
   }
+}
+
+/** 被镜像引用的原节点及其整棵子树的 id 集合（这些节点在多个视图里同时出现）。 */
+function computeMirroredIds(doc: OutlineDoc): Set<string> {
+  const ids = new Set<string>();
+  if (!hasMirrors(doc.blocks)) return ids;
+
+  const referenced = new Set<string>();
+  const collectRefs = (nodes: readonly OutlineNode[]): void => {
+    for (const node of nodes) {
+      if (node.mirror !== null) referenced.add(node.mirror);
+      collectRefs(node.children);
+    }
+  };
+  const markSubtree = (node: OutlineNode): void => {
+    ids.add(node.id);
+    for (const child of node.children) markSubtree(child);
+  };
+  const scan = (nodes: readonly OutlineNode[]): void => {
+    for (const node of nodes) {
+      if (node.blockId !== null && referenced.has(node.blockId)) markSubtree(node);
+      scan(node.children);
+    }
+  };
+
+  for (const block of doc.blocks) if (block.kind === 'list') collectRefs(block.roots);
+  for (const block of doc.blocks) if (block.kind === 'list') scan(block.roots);
+  return ids;
+}
+
+/** op 里的 id 也可能来自镜像视图，统一归一到数据层 id。 */
+function normalizeOp(op: Op): Op {
+  if ('id' in op && isComposite(op.id)) op = { ...op, id: originalIdOf(op.id) };
+  if ('parentId' in op && typeof op.parentId === 'string' && isComposite(op.parentId)) {
+    op = { ...op, parentId: originalIdOf(op.parentId) };
+  }
+  return op;
+}
+
+function isComposite(id: string): boolean {
+  return id.includes('/');
 }
 
 /** webview 从不序列化，eol / eofNewline 只是为了复用 OutlineDoc 类型（见 docs/02）。 */

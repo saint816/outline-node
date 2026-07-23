@@ -9,6 +9,8 @@ export interface TestNode {
   text: string;
   checked?: boolean | null;
   note?: string | null;
+  blockId?: string | null;
+  mirror?: string | null;
   children?: TestNode[];
 }
 
@@ -22,8 +24,8 @@ function toSnapshotNode(n: TestNode): unknown {
     text: n.text,
     checked: n.checked ?? null,
     note: n.note ?? null,
-    blockId: null,
-    mirror: null,
+    blockId: n.blockId ?? null,
+    mirror: n.mirror ?? null,
     children: (n.children ?? []).map(toSnapshotNode),
     raw: null,
   };

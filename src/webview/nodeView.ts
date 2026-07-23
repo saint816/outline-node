@@ -2,6 +2,7 @@
 // 只负责「一个节点 → 一段 DOM」，不感知树的增删改顺序（那是 renderer 的事）。
 
 import type { OutlineNode } from '../core/model.js';
+import type { MirrorState } from './mirror.js';
 
 export interface UpdateOptions {
   /** 该节点正在被编辑（focus 在内且文本未变 / IME 组合中）→ 不碰它的文本 DOM。 */
@@ -9,6 +10,10 @@ export interface UpdateOptions {
   folded: boolean;
   /** 树深度（0 起），转成 aria-level（1 起）。 */
   depth: number;
+  /** 镜像展开状态（见 docs/06）。 */
+  mirrorState?: MirrorState | undefined;
+  /** 镜像行在文件里带着子行：渲染层忽略，UI 提示。 */
+  ignoredChildren?: boolean | undefined;
 }
 
 export class NodeView {
@@ -19,8 +24,12 @@ export class NodeView {
   private readonly textEl: HTMLElement;
   private badgeEl: HTMLElement | null = null;
   private noteEl: HTMLElement | null = null;
+  private hintEl: HTMLElement | null = null;
 
-  constructor(node: OutlineNode, opts: { folded: boolean; depth: number }) {
+  constructor(
+    node: OutlineNode,
+    opts: { folded: boolean; depth: number; mirrorState?: MirrorState | undefined },
+  ) {
     this.el = div('node');
     this.el.dataset.id = node.id;
     this.el.setAttribute('role', 'treeitem');
@@ -47,7 +56,12 @@ export class NodeView {
     this.childrenEl.setAttribute('role', 'group');
     this.el.append(this.row, this.childrenEl);
 
-    this.update(node, { skipText: false, folded: opts.folded, depth: opts.depth });
+    this.update(node, {
+      skipText: false,
+      folded: opts.folded,
+      depth: opts.depth,
+      mirrorState: opts.mirrorState,
+    });
   }
 
   update(node: OutlineNode, opts: UpdateOptions): void {
@@ -63,6 +77,8 @@ export class NodeView {
       this.textEl.textContent = node.text;
     }
 
+    this.syncMirrorState(opts);
+
     this.row.classList.toggle('checked', node.checked === true);
     this.row.classList.toggle('task', node.checked !== null);
     this.row.classList.toggle('mirror', node.mirror !== null);
@@ -71,6 +87,40 @@ export class NodeView {
 
     this.syncBadge(node);
     this.syncNote(node, opts);
+  }
+
+  /**
+   * 镜像状态：展开出来的镜像行可编辑（编辑落到原节点）；断链与循环引用是只读占位，
+   * 保留原文 `![[#^id]]`，绝不静默删除、不丢数据（见 docs/06）。
+   */
+  private syncMirrorState(opts: UpdateOptions): void {
+    const state = opts.mirrorState ?? 'none';
+    this.el.classList.toggle('mirror-view', state === 'mirror');
+    this.el.classList.toggle('mirror-broken', state === 'broken');
+    this.el.classList.toggle('mirror-cycle', state === 'cycle');
+
+    const readOnly = state === 'broken' || state === 'cycle';
+    this.textEl.contentEditable = readOnly ? 'false' : 'plaintext-only';
+
+    const hint = readOnly ? (state === 'broken' ? '断链引用' : '循环引用') : null;
+    if (hint === null) {
+      this.hintEl?.remove();
+      this.hintEl = null;
+    } else {
+      if (this.hintEl === null) {
+        this.hintEl = document.createElement('span');
+        this.hintEl.className = 'mirror-hint';
+        this.row.append(this.hintEl);
+      }
+      this.hintEl.textContent = hint;
+    }
+
+    this.el.classList.toggle('has-ignored-children', opts.ignoredChildren === true);
+    if (opts.ignoredChildren === true) {
+      this.row.title = '镜像行下的子行不参与渲染（数据保留在文件里）';
+    } else if (this.row.title !== '') {
+      this.row.removeAttribute('title');
+    }
   }
 
   /** blockId 只显示成小徽标，text 里不含 ^id（见 docs/05、06）。 */
