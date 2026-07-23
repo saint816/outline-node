@@ -8,12 +8,12 @@
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/REPLACE_ME_OWNER/outline-node.git"
+    "url": "https://github.com/saint816/outline-node.git"
   },
   "bugs": {
-    "url": "https://github.com/REPLACE_ME_OWNER/outline-node/issues"
+    "url": "https://github.com/saint816/outline-node/issues"
   },
-  "homepage": "https://github.com/REPLACE_ME_OWNER/outline-node#readme",
+  "homepage": "https://github.com/saint816/outline-node#readme",
   "galleryBanner": {
     "color": "#1e1e2e",
     "theme": "dark"
