@@ -39,7 +39,9 @@ marketplace.visualstudio.com/manage/publishers/outlinenode
   → New extension → Visual Studio Code → 选择 .vsix → Upload
 ```
 
-上传后状态先是 `Verifying`，微软做安全扫描；**扫描完成前 gallery API 已能查到元数据，但 `code --install-extension` 会报 not found**，属正常时间差。
+上传后状态先是 `Verifying`，微软做安全扫描；**扫描完成前 gallery API 已能查到元数据，但 `code --install-extension` 会报 not found**，属正常时间差。0.1.0 实测约 15 分钟后可安装。
+
+**点 Upload 会触发 reCAPTCHA 图片挑战**（"请选择包含 XX 的所有图块"）。挑战未通过时上传会静默失败——页面不报错，列表里也不出现新版本。这意味着网页上传路径**每次发版都需要人工过一次人机验证**，无法端到端自动化。要真正自动化只能回到 PAT 链路（见上文为何走不通）。
 
 `release.yml` 已相应调整：`vsce publish` 那步加了 `if: env.VSCE_PAT != ''`，没配 secret 时跳过而非失败。哪天愿意绑卡拿到 PAT，加个 GitHub Secret 即可恢复自动化。
 
