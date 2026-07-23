@@ -1,0 +1,35 @@
+# 07 — 性能策略
+
+## 量化红线（CI 基准脚本守护，见 09）
+
+| 指标 | 红线 |
+|---|---|
+| 5000 节点文件打开首帧可交互 | < 500ms |
+| 本地击键到屏幕反馈 | < 16ms（一帧） |
+| 外部 refresh 的增量 patch | < 50ms |
+| 5000 节点解析 parseOutline | < 20ms |
+
+## 决策：不做虚拟滚动
+
+判断依据：
+
+1. 规模估算：5000 节点 × 每节点约 4 个 DOM 元素 ≈ 2 万 DOM 节点。Chromium 对这个量级首渲百毫秒级、滚动无压力——虚拟滚动解决的是 10 万+ 量级的问题。
+2. Workflowy 本尊同样不做虚拟滚动，靠折叠与 zoom 控制可见规模；大纲工具的实际可见节点通常只有几百。
+3. 成本极高：虚拟滚动与 contenteditable 的光标保持、IME 守卫、DOM 复用三者深度冲突（focus 的节点被回收 = 光标/composition 灾难）。
+
+**替代三板斧**（收益覆盖 99% 场景）：
+
+1. **折叠子树不挂载 DOM**：不是 `display:none`，是根本不构建；展开时惰性构建并缓存进 keyed Map。大文档配合 `outlineNode.defaultFold: 'firstLevel'` 首帧只有几十个节点。
+2. **zoom 只渲染聚焦子树**：zoom 状态下其余部分完全不在 DOM。
+3. **keyed 增量 patch**（见 05）：refresh/编辑只 patch 变化节点，顺序调整用 `insertBefore` 移动现存元素，绝不整树重建。
+
+## 辅助策略
+
+- **首帧分片**：同步渲染前约 200 个可见节点立即上屏，其余用 `requestAnimationFrame` 分片追加，大文件不白屏。
+- **搜索过滤只切 class**：`.hidden` 显隐，不动 DOM 结构；输入 150ms 防抖。
+- **setText 防抖**（见 04）：连续打字不触发同步链路，本地 DOM 由浏览器 contenteditable 原生更新（0 JS 开销），这是击键 < 16ms 的根基——**打字热路径上没有任何重渲染**。
+- 事件委托：keydown/paste/pointer 全部挂容器一层，不给每节点绑监听器。
+
+## 基准 fixture
+
+`test/perf/gen-fixture.ts` 生成确定性 5000 节点文件（深度 1–6 混合、10% 带 note、10% 带 checkbox），playwright 脚本测量四项红线指标，CI 中跑（阈值放宽 2 倍容忍 CI 机器抖动，本地按红线严格执行）。

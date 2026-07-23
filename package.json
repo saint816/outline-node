@@ -1,0 +1,105 @@
+{
+  "name": "outlinenode",
+  "displayName": "OutlineNode",
+  "description": "Workflowy-style outliner for VS Code, backed by plain Markdown files.",
+  "version": "0.0.1",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Notebooks",
+    "Other"
+  ],
+  "keywords": [
+    "outliner",
+    "workflowy",
+    "markdown",
+    "notes",
+    "obsidian"
+  ],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "node esbuild.mjs --production",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc -p tsconfig.core.json --noEmit && tsc -p tsconfig.extension.json --noEmit && tsc -p tsconfig.webview.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:webview": "playwright test",
+    "test:integration": "node ./test/integration/runTest.js",
+    "package": "vsce package"
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "outlineNode.outline",
+        "displayName": "Outline",
+        "selector": [
+          {
+            "filenamePattern": "*.outline.md"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "outlineNode.outlineOptional",
+        "displayName": "Outline",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "outlineNode.openAsOutline",
+        "title": "OutlineNode: Open as Outline"
+      }
+    ],
+    "configuration": {
+      "title": "OutlineNode",
+      "properties": {
+        "outlineNode.defaultIndent": {
+          "type": "string",
+          "enum": [
+            "2-space",
+            "4-space",
+            "tab"
+          ],
+          "default": "2-space",
+          "description": "新文件或无法从内容检测缩进时使用的缩进单位"
+        },
+        "outlineNode.rememberFolding": {
+          "type": "boolean",
+          "default": true
+        },
+        "outlineNode.defaultFold": {
+          "type": "string",
+          "enum": [
+            "none",
+            "firstLevel"
+          ],
+          "default": "none"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "nanoid": "^5.0.9"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.17.0",
+    "fast-check": "^3.23.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^2.1.0"
+  }
+}

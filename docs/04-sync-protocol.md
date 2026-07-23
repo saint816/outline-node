@@ -1,0 +1,156 @@
+# 04 — 双向同步协议（shared/protocol.ts, core/ops.ts, extension/documentSession.ts）
+
+## 总原则
+
+webview 发**语义 op**（不是全文、不是 DOM diff），host 在自己的 mirror tree 上用**同一份** `applyOp` 重放 → serialize → 与当前文档做 `minimalEdits` → 最小 `WorkspaceEdit` 写回 TextDocument。语义 op 同时保证：最小 diff、合理的 undo 粒度、两端确定性一致。
+
+```
+webview                         host
+dispatch(op)
+  ├─ 本地 applyOp（乐观更新）
+  ├─ renderer.patch
+  └─ 发送队列 → edit{ops} ────► handleMessage
+                                  ├─ baseVersion 校验（失配→refresh conflict）
+                                  ├─ applyOp（同一份代码）
+                                  ├─ serialize + minimalEdits
+                                  ├─ expectedTexts 入队
+                                  └─ workspace.applyEdit
+                                onDidChangeTextDocument
+                                  ├─ 命中 expectedTexts 队首 → ack ─► 仅推进 baseVersion，零 DOM
+                                  └─ 未命中（外部修改）→ 防抖100ms → parse → treeMatch → refresh ─► 增量 patch + 恢复光标
+```
+
+## 消息协议（shared/protocol.ts，唯一契约）
+
+```ts
+// ---------- webview → host ----------
+export type W2H =
+  | { type: 'ready' }                                            // webview 加载完成/热恢复，请求 init
+  | { type: 'edit'; baseVersion: number; seq: number; ops: Op[] }
+  | { type: 'requestUndo' }
+  | { type: 'requestRedo' }
+  | { type: 'saveFolding'; foldedKeys: string[] };               // 折叠变化时节流上报（见 06）
+
+// ---------- host → webview ----------
+export type H2W =
+  | { type: 'init';    snapshot: DocSnapshot; version: number; foldedKeys: string[]; config: EditorConfig }
+  | { type: 'ack';     seq: number; version: number }            // 回声确认；webview 只推进 baseVersion
+  | { type: 'refresh'; snapshot: DocSnapshot; version: number; cause: 'external' | 'undo' | 'conflict' };
+
+export interface EditorConfig {
+  defaultIndent: IndentUnit;
+  defaultFold: 'none' | 'firstLevel';
+  rememberFolding: boolean;
+}
+```
+
+`version` 一律使用 `TextDocument.version`（VS Code 原生递增），host 不自造版本号。
+
+## Op 全集（core/ops.ts）
+
+```ts
+export type Op =
+  | { op: 'setText';  id: string; text: string }
+  | { op: 'setNote';  id: string; note: string | null }
+  | { op: 'split';    id: string; offset: number; newId: string }   // newId 由 webview 生成 nanoid，host 采纳
+  | { op: 'mergeWithPrevious'; id: string }
+  | { op: 'indent';   id: string }
+  | { op: 'outdent';  id: string }
+  | { op: 'moveUp';   id: string }
+  | { op: 'moveDown'; id: string }
+  | { op: 'move';     id: string; parentId: string | null; index: number }   // 拖拽 reparent
+  | { op: 'toggleChecked'; id: string }
+  | { op: 'insertSubtree'; parentId: string | null; index: number; nodes: NodeSnapshot[] }  // 粘贴/新建
+  | { op: 'delete';   id: string }
+  | { op: 'assignBlockId'; id: string; blockId: string };   // 镜像功能用（见 06），M6 前可不实现
+
+export interface OpResult { changed: boolean }   // false = no-op（如首节点 indent）
+export function applyOp(doc: OutlineDoc, op: Op): OpResult;   // 原地修改 doc
+```
+
+### 每个 Op 的精确语义（两端必须一致，全部只实现在 applyOp）
+
+- **setText**：替换 `text`；`raw = null`。目标不存在 → no-op（乐观更新竞态的兜底）。
+- **setNote**：替换/清除 `note`；`raw = null`。
+- **split**：`text[0, offset)` 留在原节点，`text[offset, ∞)` 归入新节点（id = `newId`）；新节点插入为原节点的**下一个兄弟**；`children`、`note`、`checked`、`blockId` 全部留在原节点，新节点为裸节点（`checked` 继承原节点的 `checked === null ? null : false`——任务列表里回车新建的是未完成任务，符合直觉）。两节点 `raw = null`。
+  - `offset === 0` 时同样适用（原节点变空、全文归新节点），keymap 负责把光标放进新节点，等效"上方插入空行"。
+  - 「展开且有子节点的节点在行尾回车 → 新建第一个子节点」是 UI 决策（依赖折叠状态，op 层不感知）：keymap 此时改发 `insertSubtree{parentId: id, index: 0, nodes: [空节点]}`，不用 split。
+- **mergeWithPrevious**：目标 = 同一 ListBlock 内**先序遍历的前一个节点**（可能是父节点）。约束：本节点 `children` 非空 → no-op；本节点是 block 第一个节点 → no-op；本节点或目标是 mirror 行 → no-op。执行：`target.text += node.text`；note 合并（双方都有 → `'\n'` 连接，只有本节点有 → 移交）；删除本节点；双方 `raw = null`。caret 恢复位置（junction = 目标原 text 长度）由 webview 在 dispatch 前自行记录，不进 op。
+- **indent**：节点成为**前一个兄弟**的最后一个子节点（连同整棵子树）。无前一个兄弟 → no-op。
+- **outdent**：节点成为**其父节点的下一个兄弟**（连同子树）；原来位于它之后的同级兄弟保持在原父之下（Workflowy 语义）。已在 block 根层 → no-op。
+- **moveUp / moveDown**：与前/后一个**兄弟**交换位置（子树整体移动）；边界 → no-op。跨层移动不在此 op 范围（用拖拽或 indent/outdent 组合）。
+- **move**：从当前位置摘除，插入到 `parentId` 的 `children[index]`（`parentId === null` → 所在 ListBlock 的 roots[index]）。约束：`parentId` 不得是本节点或其后代（成环，applyOp 内校验，违反 → no-op）；v1 拖拽限制在同一 ListBlock 内。
+- **toggleChecked**：`null → true`、`false → true`、`true → false`（决策理由见 02）。
+- **insertSubtree**：把 `nodes`（含 webview 生成的 id）插入指定位置。id 冲突（已存在）→ no-op 整条拒绝。
+- **delete**：删除节点及整棵子树。
+- **assignBlockId**：设置节点的 `blockId`（创建镜像前置步骤，见 06）；文档内已存在同名 blockId → no-op；`raw = null`。
+
+结构性 op（除 setText/setNote 外全部）导致被移动/修改节点 `raw = null`；子树内其他节点 raw 保留，靠 `raw.depth` 失配机制自动重生成（见 02）。
+
+## host 侧：DocumentSession
+
+```ts
+export class DocumentSession {
+  constructor(
+    document: vscode.TextDocument,
+    webview: vscode.Webview,
+    folding: FoldingStore,
+    config: EditorConfig,
+  );
+  handleMessage(msg: W2H): Promise<void>;
+  onDocumentChanged(e: vscode.TextDocumentChangeEvent): void;   // provider 转发文档事件
+  dispose(): void;   // 保存折叠态、清理防抖计时器
+}
+```
+
+内部状态：`mirrorDoc: OutlineDoc`（带 raw 的权威树）、`expectedTexts: string[]`（回声队列）、`externalDebounce: Timer`。
+
+### edit 处理流程
+
+1. `msg.baseVersion !== document.version` → 丢弃 ops，回 `refresh{cause:'conflict', snapshot: 当前 mirrorDoc}`。
+2. 逐个 `applyOp(mirrorDoc, op)`；全部 no-op → 直接回 `ack`（version 不变）。
+3. `newText = serializeOutline(mirrorDoc)`；`edits = minimalEdits(document.getText(), newText)`。
+4. `expectedTexts.push(newText)` → `workspace.applyEdit`。
+5. applyEdit 返回 false（罕见：文档被关闭/竞态）→ 从队列移除该预期文本，重新 `parseOutline` 当前文档 + `treeMatch` 恢复 mirrorDoc，回 `refresh{cause:'conflict'}`。
+
+### onDidChangeTextDocument（回声判定入口）
+
+- `document.getText() === expectedTexts[0]` → 出队，回 `ack{seq, version: document.version}`。**用内容比对而非计数器**：天然扛住 applyEdit 合并、失败等边界。
+- 否则 → 外部修改：防抖 100ms（连续外部写只处理最后一次）→ `newDoc = parseOutline(text)` → `matchTrees(mirrorDoc, newDoc)` 复用旧 id → `mirrorDoc = newDoc` → 回 `refresh{cause:'external'}`。
+- 期间清空 `expectedTexts`（旧预期已失效）。
+
+### undo / redo 转发
+
+`requestUndo` → `vscode.commands.executeCommand('undo')`（作用于该 custom editor 的 TextDocument，CustomTextEditorProvider 免费提供 undo 栈）。文档随之变化走 onDidChangeTextDocument 的外部修改路径，`cause` 标为 `'undo'`（session 用一个 `pendingUndo` 标志区分）。webview 收到 `refresh{cause:'undo'}` 后 patch 并按 id 恢复光标。
+
+## webview 侧：发送队列与防抖（store.ts）
+
+- 维护 `baseVersion`（init/ack/refresh 推进）、`seq` 自增、待发 op 缓冲。
+- **setText 防抖 300ms**，同一节点连续输入合并为最后一次；**连续输入超过 1s 强制 flush**（限制丢失窗口与 undo 步长）。
+- **立即 flush 的时机**：任何结构性 op 入队之前、节点 blur、Ctrl/Cmd+Z（先 flush 再发 requestUndo）、`visibilitychange` 隐藏、`saveFolding` 之前。
+- 收到 `refresh{cause:'conflict'}`：丢弃未 ack 的本地 op 队列，应用快照；若正在编辑的节点在新树中 id 存活，把 contenteditable 中未提交的文本作为新 `setText` 重新提交——用户感知几乎无损。**不做 OT/CRDT**：单用户单文件场景冲突窗口 < 防抖间隔，全量刷新 + 文本重提交是正确的复杂度。
+
+## minimalEdits（core/lineDiff.ts）
+
+```ts
+export interface TextEditSpan { start: number; end: number; text: string }  // 字符偏移，host 转 Range
+export function minimalEdits(oldText: string, newText: string): TextEditSpan[];
+```
+
+实现：按行裁剪公共前缀与公共后缀，中段作为单个替换 span（0 或 1 个 span）。不需要通用 diff 算法——单次 op 引起的变更总是局部连续的。恒等式测试：把 spans 应用到 oldText 恒等于 newText；`oldText === newText` 时返回 `[]`。
+
+## treeMatch（core/treeMatch.ts）
+
+```ts
+export function matchTrees(oldDoc: OutlineDoc, newDoc: OutlineDoc): void;
+// 原地把 newDoc 中节点的 id 替换为匹配到的 oldDoc 节点 id；未匹配的保留新 id
+```
+
+三级匹配（先高置信后启发）：
+1. `blockId` 相等 → 精确匹配（rename/move 全免疫）；
+2. `(text, note, checked)` 完全相等的未匹配节点，按文档先序一一配对；
+3. 剩余未匹配节点按文档先序 zip 配对（位置启发）。
+
+RawBlock 按 `lines.join('\n')` 相等 → 复用 id，否则按顺序 zip。
+
+目的：Git checkout / 外部编辑后，折叠状态（挂在内存 id 上）与光标（按 id 恢复）尽量存活。匹配错误的代价只是折叠/光标漂移，不影响数据正确性。
