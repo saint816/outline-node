@@ -26,6 +26,8 @@ export interface KeymapContext {
   /** zoom 导航（走前进/后退历史），null = 回到全部。 */
   navigate(id: string | null): void;
   toggleHideCompleted(): void;
+  /** 转成代码块后，把焦点放进该块 textarea（下一帧）。 */
+  focusCodeBlock(blockId: string): void;
 }
 
 export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
@@ -158,6 +160,23 @@ function onEnter(caret: CaretPos, ctx: KeymapContext): void {
   // note 里回车 → 回到正文末尾
   if (caret.field === 'note') {
     focusNode(node.id, 'text', node.text.length);
+    return;
+  }
+
+  // 顶层空壳节点上打 ``` / ```lang 回车 → 转成顶层代码块（见 02/04；代码块只能顶层）
+  const fence = /^```(\w*)$/.exec(node.text);
+  const loc = ctx.store.locationOf(node.id);
+  if (
+    fence &&
+    loc?.parentId === null &&
+    node.children.length === 0 &&
+    node.note === null &&
+    node.mirror === null
+  ) {
+    const blockId = ctx.newId();
+    const restId = ctx.newId();
+    ctx.focusCodeBlock(blockId);
+    ctx.store.dispatch({ op: 'toCodeBlock', id: node.id, lang: fence[1], blockId, restId });
     return;
   }
 

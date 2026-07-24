@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { TextEditSpan } from '../core/lineDiff.js';
-import { asW2H, type EditorConfig, type H2W } from '../shared/protocol.js';
+import { asW2H, type EditorConfig, type H2W, type W2H } from '../shared/protocol.js';
 import { DocumentSession, type SessionHost } from './documentSession.js';
 import type { FoldingStore } from './foldingStore.js';
 import type { BookmarkStore } from './bookmarkStore.js';
@@ -51,7 +51,13 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     const subscriptions = [
       webview.onDidReceiveMessage((raw: unknown) => {
         const msg = asW2H(raw);
-        if (msg) void session.handleMessage(msg);
+        if (!msg) return;
+        // 图片写盘要真 vscode.fs + 文档 uri，属 provider 职责；DocumentSession 保持 vscode 无关。
+        if (msg.type === 'saveImage') {
+          void saveImageFile(document, webview, msg);
+          return;
+        }
+        void session.handleMessage(msg);
       }),
       vscode.workspace.onDidChangeTextDocument((e) => {
         if (e.document.uri.toString() !== document.uri.toString()) return;
@@ -103,6 +109,27 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
 <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
+  }
+}
+
+// webview 生成的文件名形如 pasted-<ts>-<rand>.<ext>；这里只接受纯文件名，挡住路径穿越。
+const SAFE_IMAGE_NAME = /^[A-Za-z0-9._-]+$/;
+
+async function saveImageFile(
+  document: vscode.TextDocument,
+  webview: vscode.Webview,
+  msg: Extract<W2H, { type: 'saveImage' }>,
+): Promise<void> {
+  if (!SAFE_IMAGE_NAME.test(msg.name) || msg.name.includes('..')) {
+    void vscode.window.showErrorMessage(vscode.l10n.t('OutlineNode: Invalid image name.'));
+    return;
+  }
+  const target = vscode.Uri.joinPath(document.uri, '..', msg.name);
+  try {
+    await vscode.workspace.fs.writeFile(target, Buffer.from(msg.dataBase64, 'base64'));
+    void webview.postMessage({ type: 'imageSaved', name: msg.name } satisfies H2W);
+  } catch {
+    void vscode.window.showErrorMessage(vscode.l10n.t('OutlineNode: Failed to save pasted image.'));
   }
 }
 

@@ -413,6 +413,15 @@ export class Store {
     this.scheduleFlush();
   }
 
+  /** 代码块编辑热路径：整块替换 lines。DOM textarea 已是用户输入，不重渲染（同 setNodeText）。 */
+  setRawBlockLines(blockId: string, lines: string[]): void {
+    if (!applyOp(this.current, { op: 'setRawBlock', id: blockId, lines }).changed) return;
+    const last = this.pending[this.pending.length - 1];
+    if (last && last.op === 'setRawBlock' && last.id === blockId) last.lines = lines;
+    else this.pending.push({ op: 'setRawBlock', id: blockId, lines });
+    this.scheduleFlush();
+  }
+
   /**
    * 打字热路径默认不重渲染（DOM 已是用户敲进去的内容）。但如果这个节点还出现在某个
    * 镜像视图里，另一个视图必须跟着变——只有这种情况才补一次 patch，正在编辑的节点

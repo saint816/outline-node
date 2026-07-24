@@ -30,14 +30,16 @@ export type W2H =
   | { type: 'requestUndo' }
   | { type: 'requestRedo' }
   | { type: 'saveFolding'; foldedKeys: string[] }                // 折叠变化时节流上报（见 06）
-  | { type: 'saveBookmarks'; bookmarkKeys: string[] };           // 星标变化时节流上报（nodeKey；UI-state，仿 saveFolding）
+  | { type: 'saveBookmarks'; bookmarkKeys: string[] }            // 星标变化时节流上报（nodeKey；UI-state，仿 saveFolding）
+  | { type: 'saveImage'; name: string; dataBase64: string };    // 粘贴/拖入图片：host 把字节写到文档同目录的 name
 
 // ---------- host → webview ----------
 export type H2W =
   // bookmarkKeys 可选：旧 host 不带时 webview 按空处理。locale 不走协议——host 注入 <html lang>。
   | { type: 'init';    snapshot: DocSnapshot; version: number; foldedKeys: string[]; bookmarkKeys?: string[]; config: EditorConfig }
   | { type: 'ack';     seq: number; version: number }            // 回声确认；webview 只推进 baseVersion
-  | { type: 'refresh'; snapshot: DocSnapshot; version: number; cause: 'external' | 'undo' | 'conflict' };
+  | { type: 'refresh'; snapshot: DocSnapshot; version: number; cause: 'external' | 'undo' | 'conflict' }
+  | { type: 'imageSaved'; name: string };                        // 图片写盘完成；webview 重渲染让 ![[name]] 加载得到文件
 
 export interface EditorConfig {
   defaultIndent: IndentUnit;
@@ -47,6 +49,16 @@ export interface EditorConfig {
 ```
 
 `version` 一律使用 `TextDocument.version`（VS Code 原生递增），host 不自造版本号。
+
+### 图片粘贴/拖入（saveImage / imageSaved）
+
+单向 + 一次确认，**不改文件格式**（`.md` 只是普通文本插入 `![[name]]`，走正常 edit op；另写一个新二进制文件）：
+
+1. webview 侧 `clipboard.ts` 读到剪贴板里的图片，就地生成唯一文件名 `pasted-<ts>-<rand>.<ext>`，用 `execCommand('insertText')` 在光标处插入 `![[name]]`（与手打同一条路径：DOM + input→setText + 光标），并发 `saveImage{name, dataBase64}`。
+2. host 侧在 **provider**（不是 DocumentSession——后者保持 vscode 无关）用 `workspace.fs.writeFile` 把字节写到**文档同目录**的 `name`。文件名只接受 `[A-Za-z0-9._-]+` 且不含 `..`，挡住路径穿越。
+3. 写完回 `imageSaved{name}`，webview 收到后重渲染——此时文件已落盘，刚插入的 `![[name]]` 预览 `<img>` 才加载得到。无需 requestId 关联：重渲染是幂等的整体刷新。
+
+图片能被 webview 加载依赖 `localResourceRoots` 含文档目录 + CSP `img-src`（见 05 / provider）。
 
 ## Op 全集（core/ops.ts）
 
@@ -64,7 +76,9 @@ export type Op =
   | { op: 'toggleChecked'; id: string }
   | { op: 'insertSubtree'; parentId: string | null; index: number; nodes: NodeSnapshot[] }  // 粘贴/新建
   | { op: 'delete';   id: string }
-  | { op: 'assignBlockId'; id: string; blockId: string };   // 镜像功能用（见 06），M6 前可不实现
+  | { op: 'assignBlockId'; id: string; blockId: string }   // 镜像功能用（见 06），M6 前可不实现
+  | { op: 'setRawBlock'; id: string; lines: string[] }     // 编辑围栏代码块（唯一能改 RawBlock.lines 的 op，见 02）
+  | { op: 'toCodeBlock'; id: string; lang: string; blockId: string; restId: string };  // 空顶层根节点 → 顶层代码块
 
 export interface OpResult { changed: boolean }   // false = no-op（如首节点 indent）
 export function applyOp(doc: OutlineDoc, op: Op): OpResult;   // 原地修改 doc
@@ -86,6 +100,8 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult;   // 原地修改 do
 - **insertSubtree**：把 `nodes`（含 webview 生成的 id）插入指定位置。id 冲突（已存在）→ no-op 整条拒绝。
 - **delete**：删除节点及整棵子树。
 - **assignBlockId**：设置节点的 `blockId`（创建镜像前置步骤，见 06）；文档内已存在同名 blockId → no-op；`raw = null`。
+- **setRawBlock**：按 `id` 找到 RawBlock，整块替换 `lines`。**唯一能改 `RawBlock.lines` 的 op**（见 02 不变式 2 的例外）。守卫：目标不存在、不是 raw、或首行不是围栏（`` ``` `` / `~~~`）→ no-op（护住 frontmatter/标题等其余 RawBlock 的不可变性）；`lines` 与原相同 → no-op。webview 编辑代码块正文时保留首尾围栏行、只换中间正文。
+- **toCodeBlock**：把**空的顶层根节点**转成顶层代码块。守卫：目标不存在、`parent !== null`（非根）、或有 `children`/`note`/`mirror` → no-op。执行：把该节点所在 ListBlock 从它的位置切开——`before` 段保留原 block id，插入代码块 RawBlock（id = `blockId`，`lines = ['```'+lang, '', '```']`），`after` 段用新 block id `restId`；空段不产出。`blockId`/`restId` 由 webview 生成、host 采纳，保证两端结构确定性一致（同 split 的 `newId`）。
 
 结构性 op（除 setText/setNote 外全部）导致被移动/修改节点 `raw = null`；子树内其他节点 raw 保留，靠 `raw.depth` 失配机制自动重生成（见 02）。
 

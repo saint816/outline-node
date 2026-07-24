@@ -1,9 +1,42 @@
 // 0.2.0 新增：内嵌侧栏（顶层导航 + 星标）、隐藏已完成、zoom 前进/后退、帮助浮层。
+// 0.4.0 新增：侧栏树拖拽移动节点。
 import { expect, test } from '@playwright/test';
-import { CONFIG, focusText, inject, node, openOutline, posted, snapshot } from './support.js';
+import type { Page } from '@playwright/test';
+import {
+  CONFIG,
+  clearPosted,
+  focusText,
+  inject,
+  node,
+  openOutline,
+  posted,
+  snapshot,
+  waitForEdit,
+} from './support.js';
 
 interface PostedWindow {
   __posted: { type: string; bookmarkKeys?: string[] }[];
+}
+
+/** 拖侧栏某一行到目标行下沿；depth 由横向位置换算（步长 13px，基准 4px，与 styles.css 一致）。 */
+async function dragSidebar(
+  page: Page,
+  fromId: string,
+  toId: string,
+  opts: { depth?: number } = {},
+): Promise<void> {
+  const from = await page.locator(`.sidebar-item[data-id="${fromId}"]`).boundingBox();
+  const to = await page.locator(`.sidebar-item[data-id="${toId}"]`).boundingBox();
+  const body = await page.locator('.sidebar-body').boundingBox();
+  if (!from || !to || !body) throw new Error('missing sidebar element');
+  const targetX = body.x + 4 + (opts.depth ?? 0) * 13 + 4;
+
+  // 从行左侧起手（避开右端的星标按钮）
+  await page.mouse.move(from.x + 18, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 18, from.y + from.height / 2 + 10, { steps: 2 });
+  await page.mouse.move(targetX, to.y + to.height - 2, { steps: 4 });
+  await page.mouse.up();
 }
 
 test('侧栏列出顶层节点，点击即 zoom 进子树', async ({ page }) => {
@@ -14,6 +47,54 @@ test('侧栏列出顶层节点，点击即 zoom 进子树', async ({ page }) => 
 
   await sidebar.getByRole('button', { name: 'Beta', exact: true }).click();
   await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Beta']);
+});
+
+test('侧栏拖拽：同层重排，发出单条 move op', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta'), node('c', 'Gamma')]);
+  await clearPosted(page);
+
+  // 把 Gamma 拖到 Alpha 下沿、同层 → 落在 Alpha 之后
+  await dragSidebar(page, 'c', 'a', { depth: 0 });
+
+  const edit = await waitForEdit(page);
+  expect(edit.ops).toEqual([{ op: 'move', id: 'c', parentId: null, index: 1 }]);
+  // 侧栏顺序随之更新
+  await expect(page.locator('.sidebar .sidebar-item.sidebar-draggable .sidebar-label')).toHaveText([
+    'Alpha',
+    'Gamma',
+    'Beta',
+  ]);
+});
+
+test('侧栏拖拽：拖到兄弟节点下沿 + 缩进 → 成为其子节点', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta'), node('c', 'Gamma')]);
+  await clearPosted(page);
+
+  await dragSidebar(page, 'c', 'a', { depth: 1 });
+
+  const edit = await waitForEdit(page);
+  expect(edit.ops).toEqual([{ op: 'move', id: 'c', parentId: 'a', index: 0 }]);
+  // 主编辑区结构落定
+  await expect(page.locator('.node[data-id="a"] > .children > .node[data-id="c"]')).toHaveCount(1);
+});
+
+test('侧栏拖拽：Esc 取消，不产生 op；随后普通点击仍能导航', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta')]);
+  await clearPosted(page);
+
+  const from = (await page.locator('.sidebar-item[data-id="b"]').boundingBox())!;
+  await page.mouse.move(from.x + 18, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 18, from.y + from.height / 2 + 30, { steps: 3 });
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+
+  await page.waitForTimeout(300);
+  expect((await posted(page)).filter((m) => m.type === 'edit')).toEqual([]);
+
+  // 取消拖拽后，普通点击不被 suppressClick 误吞
+  await page.locator('.sidebar').getByRole('button', { name: 'Alpha', exact: true }).click();
+  await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Alpha']);
 });
 
 test('侧栏大纲树可展开/折叠子节点（独立于主编辑区折叠）', async ({ page }) => {

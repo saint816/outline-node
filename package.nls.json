@@ -1,3 +1,5 @@
 {
-  "config.defaultIndent.description": "Indent unit used for new files, or when it can't be detected from content"
+  "config.defaultIndent.description": "Indent unit used for new files, or when it can't be detected from content",
+  "command.openAsOutline.title": "Open as Outline",
+  "command.openAsText.title": "Open as Markdown Text"
 }

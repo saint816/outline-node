@@ -1,14 +1,18 @@
-// 内嵌左侧导航栏（Workflowy 风格）：可展开/折叠的大纲树 + 星标书签，点文字即 zoom。
-// 纯渲染，不改数据、不落用户文件。侧栏的展开状态独立于主编辑区的折叠——存 webview 内存，
-// 在侧栏展开不会折叠正文。渲染项封顶 MAX_ITEMS，护住 refresh patch 的性能红线（见 docs/07）。
+// 内嵌左侧导航栏（Workflowy 风格）：可展开/折叠的大纲树 + 星标书签，点文字即 zoom，
+// 拖拽整行即移动节点（复用主编辑区的 move op 与落点数学 resolvePlacement）。
+// 纯渲染 + 结构 op，不改数据格式、不落 UI 态到用户文件。侧栏的展开状态独立于主编辑区折叠——
+// 存 webview 内存，在侧栏展开不会折叠正文。渲染项封顶 MAX_ITEMS，护住 refresh patch 的性能红线。
 
 import type { OutlineNode } from '../core/model.js';
+import { cssEscape, resolvePlacement } from './dnd.js';
 import { t } from './i18n.js';
 
 export interface SidebarCallbacks {
   onNavigate(id: string | null): void;
   onToggleStar(id: string): void;
   onToggleCollapse(): void;
+  /** 拖拽落定：把 id 移到 parentId 下的 index 处（index 按「摘除前」坐标，见 core/ops move）。 */
+  onMove(id: string, parentId: string | null, index: number): void;
 }
 
 export interface SidebarModel {
@@ -19,15 +23,39 @@ export interface SidebarModel {
   collapsed: boolean;
 }
 
+/** 大纲树里一行的位置信息（拖拽落点计算用）。结构上兼容 dnd 的 PlacementRow。 */
+interface SidebarRow {
+  node: OutlineNode;
+  parentId: string | null;
+  index: number;
+  depth: number;
+}
+
 const MAX_ITEMS = 200;
+const DRAG_THRESHOLD_PX = 4;
+// 与 styles.css 的 .sidebar-item padding-left: calc(BASE + depth * STEP) 保持一致
+const INDENT_BASE_PX = 4;
+const INDENT_STEP_PX = 13;
 
 export class SidebarView {
   readonly el: HTMLElement;
   private readonly body: HTMLElement;
   private readonly collapseBtn: HTMLButtonElement;
+  private readonly indicator: HTMLElement;
   /** 侧栏树里被展开的节点 id（独立于主编辑区折叠；仅存内存）。 */
   private readonly expanded = new Set<string>();
   private model: SidebarModel | null = null;
+  /** 当前渲染出的大纲树行（按渲染顺序），拖拽落点计算用。 */
+  private rows: SidebarRow[] = [];
+  private drag: {
+    id: string;
+    startX: number;
+    startY: number;
+    active: boolean;
+    target: { parentId: string | null; index: number } | null;
+  } | null = null;
+  /** 拖拽结束后吞掉紧随的一次 click，避免误触发导航/展开。 */
+  private suppressClick = false;
 
   constructor(private readonly cb: SidebarCallbacks) {
     this.el = document.createElement('aside');
@@ -42,7 +70,14 @@ export class SidebarView {
     this.body = document.createElement('div');
     this.body.className = 'sidebar-body';
 
+    // 自己的类名，避免和主编辑区常驻/临时的 .drop-indicator 撞选择器
+    this.indicator = document.createElement('div');
+    this.indicator.className = 'sidebar-drop-indicator';
+    this.indicator.hidden = true;
+
     this.el.append(this.collapseBtn, this.body);
+
+    this.installDrag();
   }
 
   update(model: SidebarModel): void {
@@ -54,6 +89,7 @@ export class SidebarView {
     const model = this.model;
     if (model === null) return;
 
+    this.rows = [];
     this.el.classList.toggle('collapsed', model.collapsed);
     this.collapseBtn.textContent = model.collapsed ? '›' : '‹';
     this.collapseBtn.setAttribute(
@@ -70,7 +106,7 @@ export class SidebarView {
 
     if (model.starred.length > 0) {
       parts.push(section(t('sidebar.starred')));
-      // 星标区扁平（书签就是导航目标，不展开）
+      // 星标区扁平（书签就是导航目标，不展开、不作为拖拽源/落点）
       for (const node of model.starred) {
         if (counter.n >= MAX_ITEMS) break;
         counter.n++;
@@ -85,25 +121,29 @@ export class SidebarView {
       empty.textContent = t('sidebar.empty');
       parts.push(empty);
     } else {
-      this.renderTree(model.topLevel, parts, 0, counter);
+      this.renderTree(model.topLevel, parts, 0, null, counter);
     }
 
-    this.body.replaceChildren(...parts);
+    // 指示线随 body 一起重建：作为最后一个子元素常驻（默认 hidden）
+    this.body.replaceChildren(...parts, this.indicator);
   }
 
-  /** 大纲区：递归渲染可展开树，只在展开的节点下挂子节点。 */
+  /** 大纲区：递归渲染可展开树，只在展开的节点下挂子节点；同时登记每行的位置信息。 */
   private renderTree(
     nodes: readonly OutlineNode[],
     parts: HTMLElement[],
     depth: number,
+    parentId: string | null,
     counter: { n: number },
   ): void {
-    for (const node of nodes) {
+    for (let index = 0; index < nodes.length; index++) {
       if (counter.n >= MAX_ITEMS) return;
+      const node = nodes[index];
       counter.n++;
       parts.push(this.item(node, depth, true));
+      this.rows.push({ node, parentId, index, depth });
       if (node.children.length > 0 && this.expanded.has(node.id)) {
-        this.renderTree(node.children, parts, depth + 1, counter);
+        this.renderTree(node.children, parts, depth + 1, node.id, counter);
       }
     }
   }
@@ -132,6 +172,11 @@ export class SidebarView {
     const row = document.createElement('div');
     row.className = 'sidebar-item' + (node.id === model.currentZoomId ? ' active' : '');
     row.style.setProperty('--depth', String(depth));
+    // 只有大纲树行可拖拽（Home / 星标不参与结构移动）
+    if (tree) {
+      row.dataset.id = node.id;
+      row.classList.add('sidebar-draggable');
+    }
 
     // 展开/折叠三角（仅大纲树、且有子节点时）
     if (tree && node.children.length > 0) {
@@ -174,6 +219,139 @@ export class SidebarView {
 
     return row;
   }
+
+  // ---------- 拖拽移动 ----------
+
+  private installDrag(): void {
+    this.body.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+    // move/up 挂到 window：指针可能移出侧栏
+    window.addEventListener('pointermove', (e) => this.onPointerMove(e));
+    window.addEventListener('pointerup', () => this.onPointerUp());
+    window.addEventListener('pointercancel', () => this.cancelDrag());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.drag?.active) {
+        e.preventDefault();
+        this.cancelDrag();
+      }
+    });
+    // 捕获阶段吞掉拖拽后的那次 click（早于 label/toggle 的冒泡处理）
+    this.body.addEventListener(
+      'click',
+      (e) => {
+        if (this.suppressClick) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.suppressClick = false;
+        }
+      },
+      true,
+    );
+  }
+
+  private onPointerDown(e: PointerEvent): void {
+    this.suppressClick = false;
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement | null;
+    // 星标是独立动作，不作为拖拽起点
+    if (!target || target.closest('.sidebar-star')) return;
+    const rowEl = target.closest<HTMLElement>('.sidebar-item.sidebar-draggable');
+    const id = rowEl?.dataset.id;
+    if (!id) return;
+    this.drag = { id, startX: e.clientX, startY: e.clientY, active: false, target: null };
+  }
+
+  private onPointerMove(e: PointerEvent): void {
+    const drag = this.drag;
+    if (drag === null) return;
+    if (!drag.active) {
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD_PX) return;
+      drag.active = true;
+      this.rowElement(drag.id)?.classList.add('dragging');
+    }
+    e.preventDefault();
+    const drop = this.computeDrop(drag.id, e.clientX, e.clientY);
+    drag.target = drop ? { parentId: drop.parentId, index: drop.index } : null;
+    if (drop) {
+      this.indicator.hidden = false;
+      this.indicator.style.top = `${drop.top}px`;
+      this.indicator.style.left = `${drop.left}px`;
+    } else {
+      this.indicator.hidden = true;
+    }
+  }
+
+  private onPointerUp(): void {
+    const drag = this.drag;
+    if (drag === null) return;
+    if (drag.active) {
+      this.rowElement(drag.id)?.classList.remove('dragging');
+      if (drag.target) {
+        this.suppressClick = true;
+        this.cb.onMove(drag.id, drag.target.parentId, drag.target.index);
+      }
+    }
+    this.indicator.hidden = true;
+    this.drag = null;
+  }
+
+  private cancelDrag(): void {
+    if (this.drag?.active) this.rowElement(this.drag.id)?.classList.remove('dragging');
+    this.indicator.hidden = true;
+    this.drag = null;
+  }
+
+  private rowElement(id: string): HTMLElement | null {
+    return this.body.querySelector<HTMLElement>(`.sidebar-item[data-id="${cssEscape(id)}"]`);
+  }
+
+  /** 指针位置 → 落点。落点非法（跨 block / 成环）由 move op 兜底为 no-op，这里不重复校验。 */
+  private computeDrop(
+    dragId: string,
+    x: number,
+    y: number,
+  ): { parentId: string | null; index: number; top: number; left: number } | null {
+    const dragged = this.rows.find((r) => r.node.id === dragId);
+    if (!dragged) return null;
+    const excluded = subtreeIds(dragged.node);
+
+    const entries = this.rows
+      .filter((r) => !excluded.has(r.node.id))
+      .map((r) => ({ row: r, el: this.rowElement(r.node.id) }))
+      .filter((e): e is { row: SidebarRow; el: HTMLElement } => e.el !== null)
+      .map((e) => ({ ...e, rect: e.el.getBoundingClientRect() }));
+    if (entries.length === 0) return null;
+
+    let afterIndex = -1;
+    for (let i = 0; i < entries.length; i++) {
+      const rect = entries[i].rect;
+      if (y >= rect.top + rect.height / 2) afterIndex = i;
+    }
+    const after = afterIndex >= 0 ? entries[afterIndex] : null;
+    const next = entries[afterIndex + 1] ?? null;
+
+    const maxDepth = after ? after.row.depth + 1 : 0;
+    const minDepth = next ? next.row.depth : 0;
+    const bodyRect = this.body.getBoundingClientRect();
+    const wanted = Math.round((x - bodyRect.left - INDENT_BASE_PX) / INDENT_STEP_PX);
+    const depth = Math.max(
+      Math.min(minDepth, maxDepth),
+      Math.min(maxDepth, Math.max(minDepth, wanted)),
+    );
+
+    const placement = resolvePlacement(
+      entries.map((e) => e.row),
+      after?.row ?? null,
+      depth,
+    );
+    if (!placement) return null;
+
+    const gapBottom = after ? after.rect.bottom : entries[0].rect.top;
+    return {
+      ...placement,
+      top: gapBottom - bodyRect.top,
+      left: INDENT_BASE_PX + depth * INDENT_STEP_PX,
+    };
+  }
 }
 
 function section(title: string): HTMLElement {
@@ -188,4 +366,15 @@ function spacer(): HTMLElement {
   el.className = 'sidebar-toggle spacer';
   el.setAttribute('aria-hidden', 'true');
   return el;
+}
+
+/** 一个节点连同全部后代的 id（拖拽时不能落进自己的子树）。 */
+function subtreeIds(node: OutlineNode): Set<string> {
+  const out = new Set<string>();
+  const walk = (n: OutlineNode): void => {
+    out.add(n.id);
+    for (const child of n.children) walk(child);
+  };
+  walk(node);
+  return out;
 }

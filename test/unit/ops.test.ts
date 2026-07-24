@@ -349,3 +349,86 @@ describe('raw 失效规则', () => {
     expect(nodeOf(doc, 'b').raw).toEqual({ lines: ['* b'], depth: 0 });
   });
 });
+
+describe('代码块 op（setRawBlock / toCodeBlock，路线 B）', () => {
+  it('setRawBlock 编辑围栏代码块正文，其余字节不动', () => {
+    const doc = parse('- a\n```js\nconst x = 1;\n```\n- c\n');
+    const code = doc.blocks.find((b) => b.kind === 'raw')!;
+    const r = applyOp(doc, { op: 'setRawBlock', id: code.id, lines: ['```js', 'const y = 2;', '```'] });
+    expect(r.changed).toBe(true);
+    expect(serializeOutline(doc)).toBe('- a\n```js\nconst y = 2;\n```\n- c\n');
+  });
+
+  it('setRawBlock 拒绝非围栏 RawBlock（标题不可变，守不变式 2）', () => {
+    const doc = parse('# Heading\n');
+    const raw = doc.blocks.find((b) => b.kind === 'raw')!;
+    const r = applyOp(doc, { op: 'setRawBlock', id: raw.id, lines: ['# Hacked'] });
+    expect(r.changed).toBe(false);
+    expect(serializeOutline(doc)).toBe('# Heading\n');
+  });
+
+  it('setRawBlock 目标不存在 / 内容相同 → no-op', () => {
+    const doc = parse('```\ncode\n```\n');
+    const code = doc.blocks.find((b) => b.kind === 'raw')!;
+    expect(applyOp(doc, { op: 'setRawBlock', id: 'ghost', lines: ['x'] }).changed).toBe(false);
+    expect(applyOp(doc, { op: 'setRawBlock', id: code.id, lines: ['```', 'code', '```'] }).changed).toBe(
+      false,
+    );
+  });
+
+  it('toCodeBlock 把中间根节点转成顶层代码块，切开列表', () => {
+    const doc = parse('- a\n- b\n- c\n');
+    const r = applyOp(doc, {
+      op: 'toCodeBlock',
+      id: idOf(doc, 'b'),
+      lang: 'js',
+      blockId: 'CB',
+      restId: 'R2',
+    });
+    expect(r.changed).toBe(true);
+    expect(serializeOutline(doc)).toBe('- a\n```js\n\n```\n- c\n');
+    // 结构 round-trip 一致
+    expect(shapeOfBlocks(parse(serializeOutline(doc)))).toEqual(shapeOfBlocks(doc));
+  });
+
+  it('toCodeBlock 首个根节点：before 空，只出代码块 + after 列表', () => {
+    const doc = parse('- a\n- b\n');
+    applyOp(doc, { op: 'toCodeBlock', id: idOf(doc, 'a'), lang: '', blockId: 'CB', restId: 'R2' });
+    expect(serializeOutline(doc)).toBe('```\n\n```\n- b\n');
+  });
+
+  it('toCodeBlock 唯一根节点：整段变成一个代码块', () => {
+    const doc = parse('- x\n');
+    applyOp(doc, { op: 'toCodeBlock', id: idOf(doc, 'x'), lang: 'ts', blockId: 'CB', restId: 'R2' });
+    expect(serializeOutline(doc)).toBe('```ts\n\n```\n');
+  });
+
+  it('toCodeBlock 拒绝嵌套节点（代码块只能顶层）', () => {
+    const doc = parse('- a\n  - b\n');
+    const r = applyOp(doc, {
+      op: 'toCodeBlock',
+      id: idOf(doc, 'b'),
+      lang: '',
+      blockId: 'CB',
+      restId: 'R2',
+    });
+    expect(r.changed).toBe(false);
+    expect(serializeOutline(doc)).toBe('- a\n  - b\n');
+  });
+
+  it('toCodeBlock 拒绝有子节点的根（避免丢内容）', () => {
+    const doc = parse('- a\n  - a1\n- b\n');
+    const r = applyOp(doc, {
+      op: 'toCodeBlock',
+      id: idOf(doc, 'a'),
+      lang: '',
+      blockId: 'CB',
+      restId: 'R2',
+    });
+    expect(r.changed).toBe(false);
+  });
+});
+
+function shapeOfBlocks(doc: OutlineDoc): string[] {
+  return doc.blocks.map((b) => (b.kind === 'raw' ? `raw:${b.lines.join('|')}` : `list:${b.roots.length}`));
+}

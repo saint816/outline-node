@@ -103,10 +103,20 @@ export type NodeSnapshot = OutlineNode;   // 结构相同，约定 raw 为 null
 
 host 侧的 mirror tree（带 raw）才是序列化依据；webview 树只服务渲染与乐观更新。两端对同一 op 序列的**结构**演化必须一致（applyOp 共享保证），raw 的差异不影响结构语义。
 
+## 代码块：可编辑的 RawBlock（路线 B，0.4.0）
+
+围栏代码块在本模型里**始终是文档级 RawBlock**（parser 把每个围栏切成独立 RawBlock，见 03）——它是列表的兄弟、不是任何节点的孩子。这是「字节保真的纯 Markdown」的必然结果：Obsidian 里在列表中间写围栏也是同样效果。因此：
+
+- **代码块只能在顶层，不能嵌套在某个节点下面。** 想要嵌套代码只能走「私有约定」，会破坏「卸载后原样可读」，故不做。
+- **可编辑**：渲染层给代码块 RawBlock 一个 `<textarea>`，改动经 `setRawBlock{id, lines}` 整块替换（保留首尾围栏行，只换正文）。`setRawBlock` 只对「首行是围栏」的 RawBlock 生效，其余 RawBlock 仍不可变（守住不变式 2 的边界）。
+- **可创建**：在**空的顶层根节点**上打 ` ``` ` / ` ```lang ` 再回车，经 `toCodeBlock{id, lang, blockId, restId}` 把该节点所在 ListBlock 从该位置切开，中间插入代码块 RawBlock。非根节点上不触发（保持 ``` 为普通文本）。`blockId`/`restId` 由 webview 生成、host 采纳（同 split 的 newId），保证两端确定性一致。
+
+数据模型的 `Block` / `RawBlock` / `OutlineNode` 类型**不变**——代码块复用现成的 RawBlock，没有新增节点种类（这正是选路线 B 而非路线 A 的原因）。
+
 ## 不变式（测试必须覆盖）
 
 1. 任何时刻 `OutlineDoc` 中所有 `id` 全局唯一（跨 block）。
-2. `RawBlock.lines` 与 `RawSource.lines` 永不被任何 op 修改（只会整体丢弃或原样输出）。
+2. `RawBlock.lines` 与 `RawSource.lines` 永不被任何 op 修改（只会整体丢弃或原样输出）。**唯一例外：围栏代码块 RawBlock**——用户显式编辑时经 `setRawBlock` 替换其行，创建时经 `toCodeBlock` 生成（见下「代码块：可编辑的 RawBlock」）。frontmatter / 标题 / 正文段落 / 图片 / 空行等其余一切 RawBlock 仍严格不可变。红线 1（未被编辑内容字节级 round-trip）不受影响：只有被用户改动的代码块才重生成。
 3. `mirror !== null` 的节点：`children` 恒为空数组、`note` 恒为 null（镜像行是纯引用行，见 06）。
 4. 空文档（0 字节）解析为 `{ blocks: [], eofNewline: false }`；序列化回 0 字节。
 5. 只含空行/正文的文档：一个或多个 RawBlock，无 ListBlock，round-trip 字节相等。

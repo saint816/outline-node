@@ -81,6 +81,7 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 | `Backspace`（offset 0） | `mergeWithPrevious`；dispatch 前记录 junction offset 用于恢复光标 |
 | `Alt+↑` / `Alt+↓` | `moveUp` / `moveDown` |
 | `Cmd/Ctrl+Enter` | `toggleChecked` |
+| ` ``` ` / ` ```lang ` + `Enter` | 空的顶层根节点 → 顶层代码块（`toCodeBlock`，见 02/04）；非顶层节点上不触发，`Enter` 按普通逻辑走 |
 | `Alt+→` / `Alt+←` | zoom in 当前节点 / zoom out 一级 |
 | `Cmd/Ctrl+.` | 折叠/展开当前节点 |
 | `↑` / `↓`（在首/末行） | 光标移到可见前/后节点（列尽量保持） |
@@ -92,11 +93,14 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 
 ## 剪贴板（clipboard.ts）
 
-- **paste**：`preventDefault()`，取 `clipboardData.getData('text/plain')`：
-  - 多行且含列表语法 → 复用 **core parser** 解析出子树（从 Workflowy/Obsidian 复制的缩进列表直接还原层级），发 `insertSubtree`；
-  - 多行无列表语法 → 按行拆为兄弟节点，发 `insertSubtree`；
-  - 单行 → 插入 caret 处，走 `setText`。
+- **paste**：`preventDefault()`；先看剪贴板里有没有图片：
+  - **图片** → 生成唯一文件名，`execCommand('insertText')` 在光标处插入 `![[name]]`（走和手打一致的路径），并发 `saveImage{name, dataBase64}` 让 host 写盘（见 04）；
+  - 否则取 `clipboardData.getData('text/plain')`：多行且含列表语法 → 复用 **core parser** 解析出子树发 `insertSubtree`；多行无列表语法 → 按行拆为兄弟节点发 `insertSubtree`；单行 → 插入 caret 处走 `setText`。
 - **copy/cut**：选中节点（或光标所在节点整棵子树）序列化为 markdown 列表写入剪贴板（复用 core serializer），与外界互粘闭环；cut 追加 `delete` op。
+
+## 代码块编辑（nodeView.ts + main.ts 委托）
+
+围栏代码块 RawBlock 渲染为语言标签 + 可编辑 `textarea`（`data-field="code"`），元素上带 `data-block-id`（renderer 注入）。textarea `input` 经 main.ts 委托重建整块行（保留 `data-code-open` / `data-code-close` 原始围栏）→ `store.setRawBlockLines` → `setRawBlock` op（热路径不重渲染，同 setNodeText）。正在编辑本块时 `updateRawBlockView` 一票跳过（`el.contains(document.activeElement)`），不打断输入。创建见快捷键表 ` ``` ` 行。
 
 ## 拖拽（dnd.ts）
 

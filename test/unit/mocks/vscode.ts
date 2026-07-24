@@ -104,6 +104,10 @@ export const registry = {
   /** 测试可替换：模拟 applyEdit 失败。 */
   applyEditSucceeds: true,
   documents: [] as MockTextDocument[],
+  /** workspace.fs.writeFile 的记录（图片写盘测试用）。 */
+  writes: [] as { uri: string; bytes: Uint8Array }[],
+  /** window.showErrorMessage 的记录。 */
+  errors: [] as string[],
   reset(): void {
     this.customEditors = [];
     this.commands.clear();
@@ -111,7 +115,11 @@ export const registry = {
     this.config.clear();
     this.applyEditSucceeds = true;
     this.documents = [];
+    this.writes = [];
+    this.errors = [];
     changeListeners.clear();
+    window.activeTextEditor = undefined;
+    window.tabGroups.activeTabGroup.activeTab = undefined;
   },
 };
 
@@ -141,6 +149,12 @@ export const workspace = {
   getWorkspaceFolder(_uri: Uri): { uri: Uri } | undefined {
     return undefined;
   },
+  fs: {
+    writeFile(uri: Uri, content: Uint8Array): Promise<void> {
+      registry.writes.push({ uri: uri.toString(), bytes: content });
+      return Promise.resolve();
+    },
+  },
 };
 
 export const env = {
@@ -153,13 +167,27 @@ export const l10n = {
   },
 };
 
+export class TabInputCustom {
+  constructor(
+    readonly uri: Uri,
+    readonly viewType: string,
+  ) {}
+}
+
 export const window = {
   activeTextEditor: undefined as { document: TextDocumentLike } | undefined,
+  tabGroups: {
+    activeTabGroup: { activeTab: undefined as { input: unknown } | undefined },
+  },
   registerCustomEditorProvider(viewType: string, provider: unknown): Disposable {
     registry.customEditors.push({ viewType, provider });
     return { dispose: () => {} };
   },
   showInformationMessage(): Promise<undefined> {
+    return Promise.resolve(undefined);
+  },
+  showErrorMessage(message: string): Promise<undefined> {
+    registry.errors.push(message);
     return Promise.resolve(undefined);
   },
 };

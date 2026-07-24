@@ -11,6 +11,8 @@ import type { Store } from './store.js';
 export interface ClipboardContext {
   store: Store;
   setNextCaret(pos: CaretPos): void;
+  /** 把图片字节交给 host 写到文档同目录的 name 文件（见 docs/04 saveImage）。 */
+  saveImage(name: string, dataBase64: string): void;
 }
 
 export function installClipboard(root: HTMLElement, ctx: ClipboardContext): void {
@@ -22,6 +24,15 @@ export function installClipboard(root: HTMLElement, ctx: ClipboardContext): void
 function onPaste(event: ClipboardEvent, ctx: ClipboardContext): void {
   const caret = saveCaret();
   if (!caret) return;
+
+  // 图片：在光标处插入 Obsidian 原生嵌入语法 ![[name]]，并把字节交给 host 写盘（渲染见 Phase 2）
+  const image = imageFileFrom(event.clipboardData);
+  if (image) {
+    event.preventDefault();
+    insertPastedImage(image, ctx);
+    return;
+  }
+
   const text = event.clipboardData?.getData('text/plain') ?? '';
 
   // SPEC-GAP: docs/05 说 paste 一律 preventDefault 后自己插入。单行文本没必要——
@@ -50,6 +61,47 @@ function onPaste(event: ClipboardEvent, ctx: ClipboardContext): void {
   if (current && current.text === '' && current.note === null && current.children.length === 0) {
     ctx.store.dispatch({ op: 'delete', id: caret.nodeId });
   }
+}
+
+const MIME_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'image/bmp': 'bmp',
+  'image/avif': 'avif',
+};
+
+/** 剪贴板里的第一张图片（截图/复制的图片文件）。 */
+function imageFileFrom(data: DataTransfer | null): File | null {
+  if (!data) return null;
+  for (const item of data.items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) return file;
+    }
+  }
+  return null;
+}
+
+/**
+ * 在光标处插入 ![[name]] 并把字节发给 host 写盘。
+ * 用 execCommand('insertText') 让插入走和手打完全一致的路径（DOM + input→setText + 光标），
+ * 文件名带时间戳+随机串避免碰撞；host 写完回 imageSaved，webview 届时重渲染让图片加载得到。
+ */
+function insertPastedImage(file: File, ctx: ClipboardContext): void {
+  const ext = MIME_EXT[file.type] ?? 'png';
+  const name = `pasted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  document.execCommand('insertText', false, `![[${name}]]`);
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = typeof reader.result === 'string' ? reader.result : '';
+    const comma = result.indexOf(','); // data:<mime>;base64,<payload>
+    if (comma >= 0) ctx.saveImage(name, result.slice(comma + 1));
+  };
+  reader.readAsDataURL(file);
 }
 
 /** 剪贴板文本 → 子树。含列表语法就按缩进还原层级，否则按行拆成兄弟节点。 */

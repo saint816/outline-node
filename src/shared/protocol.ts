@@ -57,7 +57,9 @@ export type W2H =
   | { type: 'requestUndo' }
   | { type: 'requestRedo' }
   | { type: 'saveFolding'; foldedKeys: string[] }
-  | { type: 'saveBookmarks'; bookmarkKeys: string[] };
+  | { type: 'saveBookmarks'; bookmarkKeys: string[] }
+  /** 粘贴/拖入图片：host 把 base64 字节写到文档同目录的 name 文件（见 docs/04）。 */
+  | { type: 'saveImage'; name: string; dataBase64: string };
 
 // ---------- host → webview ----------
 
@@ -77,7 +79,9 @@ export type H2W =
       snapshot: DocSnapshot;
       version: number;
       cause: 'external' | 'undo' | 'conflict';
-    };
+    }
+  /** 图片写盘完成：webview 收到后重渲染，让刚插入的 ![[name]] 能加载到文件（见 docs/04）。 */
+  | { type: 'imageSaved'; name: string };
 
 // ---------- 边界类型守卫 ----------
 // 消息来自另一个进程/渲染器，是 unknown。这里把它收窄成协议类型，避免 any 逃逸。
@@ -102,6 +106,10 @@ export function asW2H(raw: unknown): W2H | null {
     case 'saveBookmarks':
       return Array.isArray(raw.bookmarkKeys) && raw.bookmarkKeys.every((k) => typeof k === 'string')
         ? { type: 'saveBookmarks', bookmarkKeys: raw.bookmarkKeys as string[] }
+        : null;
+    case 'saveImage':
+      return typeof raw.name === 'string' && typeof raw.dataBase64 === 'string'
+        ? { type: 'saveImage', name: raw.name, dataBase64: raw.dataBase64 }
         : null;
     default:
       return null;
@@ -128,6 +136,8 @@ export function asH2W(raw: unknown): H2W | null {
         (raw.cause === 'external' || raw.cause === 'undo' || raw.cause === 'conflict')
         ? (raw as unknown as H2W)
         : null;
+    case 'imageSaved':
+      return typeof raw.name === 'string' ? { type: 'imageSaved', name: raw.name } : null;
     default:
       return null;
   }

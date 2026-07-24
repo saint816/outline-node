@@ -161,10 +161,18 @@ export function computeDropTarget(
   };
 }
 
+/** resolvePlacement / 侧栏拖拽复用的最小行形状（主编辑区的 VisibleRow 结构上兼容）。 */
+export interface PlacementRow {
+  node: { id: string };
+  parentId: string | null;
+  index: number;
+  depth: number;
+}
+
 /** (插入到 after 之后, 目标深度) → (parentId, index)。index 按「摘除前」坐标。 */
-function resolvePlacement(
-  rows: readonly VisibleRow[],
-  after: VisibleRow | null,
+export function resolvePlacement(
+  rows: readonly PlacementRow[],
+  after: PlacementRow | null,
   depth: number,
 ): { parentId: string | null; index: number } | null {
   if (after === null) {
@@ -173,7 +181,7 @@ function resolvePlacement(
   }
   if (depth > after.depth) return { parentId: after.node.id, index: 0 };
 
-  let current: VisibleRow | undefined = after;
+  let current: PlacementRow | undefined = after;
   while (current && current.depth > depth) {
     current = rows.find((row) => row.node.id === current!.parentId);
   }
@@ -204,6 +212,6 @@ function rowRect(nodeEl: HTMLElement): DOMRect {
   return (row ?? nodeEl).getBoundingClientRect();
 }
 
-function cssEscape(value: string): string {
+export function cssEscape(value: string): string {
   return value.replace(/["\\]/g, '\\$&');
 }

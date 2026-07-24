@@ -3,7 +3,14 @@
 
 import { nanoid } from 'nanoid';
 import { parseMirrorTarget } from './parser.js';
-import { forEachNode, type ListBlock, type OutlineDoc, type OutlineNode } from './model.js';
+import {
+  forEachNode,
+  type Block,
+  type ListBlock,
+  type OutlineDoc,
+  type OutlineNode,
+  type RawBlock,
+} from './model.js';
 
 export type Op =
   | { op: 'setText'; id: string; text: string }
@@ -19,7 +26,9 @@ export type Op =
   | { op: 'toggleOrdered'; id: string }
   | { op: 'insertSubtree'; parentId: string | null; index: number; nodes: OutlineNode[] }
   | { op: 'delete'; id: string }
-  | { op: 'assignBlockId'; id: string; blockId: string };
+  | { op: 'assignBlockId'; id: string; blockId: string }
+  | { op: 'setRawBlock'; id: string; lines: string[] }
+  | { op: 'toCodeBlock'; id: string; lang: string; blockId: string; restId: string };
 
 export interface OpResult {
   changed: boolean; // false = no-op（如首节点 indent）
@@ -67,7 +76,60 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult {
       return remove(doc, op.id);
     case 'assignBlockId':
       return assignBlockId(doc, op.id, op.blockId);
+    case 'setRawBlock':
+      return setRawBlock(doc, op.id, op.lines);
+    case 'toCodeBlock':
+      return toCodeBlock(doc, op.id, op.lang, op.blockId, op.restId);
   }
+}
+
+// ---------- 代码块（可编辑的 RawBlock，见 02「代码块：可编辑的 RawBlock」） ----------
+
+const FENCE_LINE = /^[ \t]*(`{3,}|~{3,})/;
+
+/** 编辑围栏代码块：整块替换 lines。唯一能改 RawBlock.lines 的 op（不变式 2 的例外）。 */
+function setRawBlock(doc: OutlineDoc, id: string, lines: string[]): OpResult {
+  const block = doc.blocks.find((b) => b.id === id);
+  if (!block || block.kind !== 'raw') return NO_OP;
+  // 只有围栏代码块可编辑；frontmatter / 标题 / 正文 / 图片等其余 RawBlock 严格不可变
+  if (block.lines.length === 0 || !FENCE_LINE.test(block.lines[0])) return NO_OP;
+  if (block.lines.length === lines.length && block.lines.every((l, i) => l === lines[i])) {
+    return NO_OP;
+  }
+  block.lines = lines;
+  return CHANGED;
+}
+
+/** 空的顶层根节点 → 顶层代码块（把所在 ListBlock 从该位置切开，中间插入代码块 RawBlock）。 */
+function toCodeBlock(
+  doc: OutlineDoc,
+  id: string,
+  lang: string,
+  blockId: string,
+  restId: string,
+): OpResult {
+  const found = locate(doc, id);
+  if (!found) return NO_OP;
+  // 代码块只能在顶层：仅根节点可转，且必须是「空壳」，否则会丢内容
+  if (found.parent !== null) return NO_OP;
+  if (found.node.children.length > 0 || found.node.note !== null || found.node.mirror !== null) {
+    return NO_OP;
+  }
+  const listIdx = doc.blocks.indexOf(found.block);
+  if (listIdx === -1) return NO_OP;
+  // 新 block id 不能与现有 block id 冲突（invariant 1）
+  const usedBlockIds = new Set(doc.blocks.map((b) => b.id));
+  const before = found.block.roots.slice(0, found.index);
+  const after = found.block.roots.slice(found.index + 1);
+  if (usedBlockIds.has(blockId) || (after.length > 0 && usedBlockIds.has(restId))) return NO_OP;
+
+  const codeBlock: RawBlock = { kind: 'raw', id: blockId, lines: ['```' + lang, '', '```'] };
+  const replacement: Block[] = [];
+  if (before.length) replacement.push({ kind: 'list', id: found.block.id, roots: before });
+  replacement.push(codeBlock);
+  if (after.length) replacement.push({ kind: 'list', id: restId, roots: after });
+  doc.blocks.splice(listIdx, 1, ...replacement);
+  return CHANGED;
 }
 
 // ---------- 内容类 op（改字段 → raw 失效） ----------

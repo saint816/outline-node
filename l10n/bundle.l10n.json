@@ -1,3 +1,5 @@
 {
-  "OutlineNode: No active text editor.": "OutlineNode: No active text editor."
+  "OutlineNode: No active Markdown file.": "OutlineNode: No active Markdown file.",
+  "OutlineNode: Invalid image name.": "OutlineNode: Invalid image name.",
+  "OutlineNode: Failed to save pasted image.": "OutlineNode: Failed to save pasted image."
 }

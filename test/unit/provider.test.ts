@@ -2,7 +2,7 @@
 // 文档事件回流。用最小 vscode 桩（test/unit/mocks/vscode.ts）在纯 Node 下跑。
 import { beforeEach, describe, expect, it } from 'vitest';
 // 直接引 mock 模块：vitest 的 alias 让 src/extension 里的 'vscode' 解析到同一份实例
-import { MockTextDocument, Uri, registry, window as mockWindow } from './mocks/vscode.js';
+import { MockTextDocument, TabInputCustom, Uri, registry, window as mockWindow } from './mocks/vscode.js';
 import { activate, readEditorConfig } from '../../src/extension/extension.js';
 import { OutlineEditorProvider } from '../../src/extension/outlineEditorProvider.js';
 import { FoldingStore } from '../../src/extension/foldingStore.js';
@@ -81,7 +81,7 @@ function memento() {
 }
 
 function nodes(msg: H2W): NodeSnapshot[] {
-  if (msg.type === 'ack') return [];
+  if (msg.type !== 'init' && msg.type !== 'refresh') return [];
   const out: NodeSnapshot[] = [];
   const walk = (list: NodeSnapshot[]): void => {
     for (const n of list) {
@@ -107,10 +107,13 @@ describe('activate', () => {
       'outlineNode.outlineOptional',
     ]);
     expect(registry.customEditors[0].provider).toBe(registry.customEditors[1].provider);
-    expect([...registry.commands.keys()]).toEqual(['outlineNode.openAsOutline']);
+    expect([...registry.commands.keys()]).toEqual([
+      'outlineNode.openAsOutline',
+      'outlineNode.openAsText',
+    ]);
   });
 
-  it('openAsOutline 对活动编辑器执行 vscode.openWith', async () => {
+  it('openAsOutline 对活动文本编辑器执行 vscode.openWith', async () => {
     const context = { subscriptions: [], extensionUri: Uri.parse('file:///ext'), workspaceState: memento() };
     activate(context as never);
     const uri = Uri.parse('file:///notes/b.md');
@@ -119,6 +122,32 @@ describe('activate', () => {
     await registry.commands.get('outlineNode.openAsOutline')!();
     expect(registry.executed).toEqual([
       { command: 'vscode.openWith', args: [uri, 'outlineNode.outlineOptional'] },
+    ]);
+  });
+
+  it('openAsText 在大纲编辑器里（无 activeTextEditor）从活动 tab 取 uri 切回原生文本', async () => {
+    const context = { subscriptions: [], extensionUri: Uri.parse('file:///ext'), workspaceState: memento() };
+    activate(context as never);
+    const uri = Uri.parse('file:///notes/c.md');
+    // 大纲是自定义编辑器：activeTextEditor 为空，uri 来自活动 tab 的 TabInputCustom
+    mockWindow.tabGroups.activeTabGroup.activeTab = {
+      input: new TabInputCustom(uri, 'outlineNode.outlineOptional'),
+    };
+
+    await registry.commands.get('outlineNode.openAsText')!();
+    expect(registry.executed).toEqual([{ command: 'vscode.openWith', args: [uri, 'default'] }]);
+  });
+
+  it('资源管理器右键：命令用传入的资源 uri，而非活动编辑器', async () => {
+    const context = { subscriptions: [], extensionUri: Uri.parse('file:///ext'), workspaceState: memento() };
+    activate(context as never);
+    const clicked = Uri.parse('file:///notes/picked.md');
+    // 另开一个不相关的活动编辑器，确认命令优先用传入的资源实参
+    mockWindow.activeTextEditor = { document: new MockTextDocument(Uri.parse('file:///other.md'), '') };
+
+    await registry.commands.get('outlineNode.openAsOutline')!(clicked);
+    expect(registry.executed).toEqual([
+      { command: 'vscode.openWith', args: [clicked, 'outlineNode.outlineOptional'] },
     ]);
   });
 
@@ -144,6 +173,28 @@ describe('provider ↔ session 端到端', () => {
     expect(html.match(/<script/g)).toHaveLength(1);
     expect(html).toMatch(/webview\.js/);
     expect(html).toMatch(/webview\.css/);
+  });
+
+  it('saveImage：把 base64 写到文档同目录并回 imageSaved', async () => {
+    const harness = openEditor('- a\n');
+    const dataBase64 = Buffer.from('PNG-BYTES').toString('base64');
+    await harness.send({ type: 'saveImage', name: 'pasted-1.png', dataBase64 });
+
+    expect(registry.writes).toHaveLength(1);
+    expect(registry.writes[0].uri).toContain('pasted-1.png');
+    expect(Buffer.from(registry.writes[0].bytes).toString()).toBe('PNG-BYTES');
+    expect(harness.posted.some((m) => m.type === 'imageSaved' && m.name === 'pasted-1.png')).toBe(
+      true,
+    );
+  });
+
+  it('saveImage：拒绝路径穿越的文件名，不写盘、报错', async () => {
+    const harness = openEditor('- a\n');
+    await harness.send({ type: 'saveImage', name: '../evil.png', dataBase64: 'AAAA' });
+
+    expect(registry.writes).toHaveLength(0);
+    expect(registry.errors.length).toBeGreaterThan(0);
+    expect(harness.posted.some((m) => m.type === 'imageSaved')).toBe(false);
   });
 
   it('ready → init 快照，edit → 文档文本按期望 markdown 写回并 ack', async () => {

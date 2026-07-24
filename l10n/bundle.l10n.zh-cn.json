@@ -1,3 +1,5 @@
 {
-  "OutlineNode: No active text editor.": "OutlineNode: 没有活动的文本编辑器。"
+  "OutlineNode: No active Markdown file.": "OutlineNode: 没有活动的 Markdown 文件。",
+  "OutlineNode: Invalid image name.": "OutlineNode: 图片文件名不合法。",
+  "OutlineNode: Failed to save pasted image.": "OutlineNode: 保存粘贴的图片失败。"
 }

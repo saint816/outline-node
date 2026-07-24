@@ -117,6 +117,7 @@ export class Renderer {
       let el = this.rawBlocks.get(block.id);
       if (!el) {
         el = createRawBlockView(block.lines);
+        el.dataset.blockId = block.id; // 代码块编辑要靠它回指 setRawBlock 的目标
         this.rawBlocks.set(block.id, el);
       } else {
         updateRawBlockView(el, block.lines);

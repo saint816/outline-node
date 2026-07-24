@@ -28,17 +28,26 @@ export function activate(context: vscode.ExtensionContext): OutlineNodeApi {
     );
   }
 
+  // 大纲 ↔ 原生文本 双向切换。命令既能从编辑器标题栏 / 命令面板触发（uri 缺省时自解析
+  // 当前编辑器），也能从资源管理器右键触发（VS Code 把点中的资源作为首个实参传入）。
+  const reopenWith = (viewType: string) => async (resource?: vscode.Uri) => {
+    const uri = resource ?? activeDocumentUri();
+    if (!uri) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t('OutlineNode: No active Markdown file.'),
+      );
+      return;
+    }
+    await vscode.commands.executeCommand('vscode.openWith', uri, viewType);
+  };
+
   context.subscriptions.push(
-    vscode.commands.registerCommand('outlineNode.openAsOutline', async () => {
-      const uri = vscode.window.activeTextEditor?.document.uri;
-      if (!uri) {
-        void vscode.window.showInformationMessage(
-          vscode.l10n.t('OutlineNode: No active text editor.'),
-        );
-        return;
-      }
-      await vscode.commands.executeCommand('vscode.openWith', uri, 'outlineNode.outlineOptional');
-    }),
+    vscode.commands.registerCommand(
+      'outlineNode.openAsOutline',
+      reopenWith('outlineNode.outlineOptional'),
+    ),
+    // 'default' = VS Code 内置文本编辑器
+    vscode.commands.registerCommand('outlineNode.openAsText', reopenWith('default')),
   );
 
   return { getSession: (uri) => provider.sessions.get(uri) };
@@ -46,6 +55,18 @@ export function activate(context: vscode.ExtensionContext): OutlineNodeApi {
 
 export function deactivate(): void {
   // 无全局资源需要释放：每个 panel 的 session 与订阅随 panel dispose。
+}
+
+/**
+ * 当前编辑器对应的文档 uri。原生文本编辑器走 activeTextEditor；大纲是 webview 自定义
+ * 编辑器，activeTextEditor 为空，改从活动 tab 的 TabInputCustom 取 uri。
+ */
+function activeDocumentUri(): vscode.Uri | undefined {
+  const textUri = vscode.window.activeTextEditor?.document.uri;
+  if (textUri) return textUri;
+  const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+  if (input instanceof vscode.TabInputCustom) return input.uri;
+  return undefined;
 }
 
 export function readEditorConfig(): EditorConfig {

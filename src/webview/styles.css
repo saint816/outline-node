@@ -290,7 +290,8 @@ body {
   opacity: 0.4;
 }
 
-.drop-indicator {
+.drop-indicator,
+.sidebar-drop-indicator {
   position: absolute;
   height: 2px;
   right: 0;
@@ -380,6 +381,30 @@ body {
   letter-spacing: 0.03em;
   color: var(--vscode-descriptionForeground);
   background: var(--vscode-badge-background);
+}
+
+/* 可编辑代码块正文 */
+.raw-block.code-block .code-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  resize: none;
+  overflow: hidden;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+  line-height: 1.4;
+  white-space: pre;
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+}
+
+.raw-block.code-block .code-input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
 }
 
 .placeholder {
@@ -473,7 +498,8 @@ body {
     background: none;
   }
 
-  .drop-indicator {
+  .drop-indicator,
+  .sidebar-drop-indicator {
     background: Highlight;
   }
 
@@ -575,12 +601,25 @@ body {
   font-style: italic;
 }
 
+/* 拖拽指示线定位到 body 内容坐标系（随侧栏滚动一起走） */
+.sidebar-body {
+  position: relative;
+}
+
 .sidebar-item {
   display: flex;
   align-items: center;
   gap: 2px;
   /* 按树深度缩进（--depth 由 JS 设置） */
   padding: 0 6px 0 calc(4px + var(--depth, 0) * 13px);
+}
+
+.sidebar-item.sidebar-draggable {
+  cursor: grab;
+}
+
+.sidebar-item.dragging {
+  opacity: 0.4;
 }
 
 .sidebar-toggle {

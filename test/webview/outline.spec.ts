@@ -144,7 +144,20 @@ test('Shift+Enter 创建 note 并聚焦，note 内换行保留', async ({ page }
   await page.keyboard.type('第一行');
   await page.keyboard.press('Shift+Enter');
   await page.keyboard.type('第二行');
-  await page.waitForTimeout(500);
+
+  // 等目标 setNote 落定（防抖），别用固定 sleep。超时给足余量——并行负载下 CPU 争用会拖慢
+  // 防抖 flush，短超时会偶发失败（这是等待条件，不是 sleep，达成即返回，不浪费时间）。
+  await page.waitForFunction(
+    () => {
+      const edits = (
+        window as never as { __posted: { type: string; ops?: { op: string; note?: string }[] }[] }
+      ).__posted.filter((m) => m.type === 'edit');
+      const last = edits[edits.length - 1];
+      return !!last?.ops?.some((o) => o.op === 'setNote' && o.note === '第一行\n第二行');
+    },
+    undefined,
+    { timeout: 10000 },
+  );
 
   edit = (await posted(page)).filter((m) => m.type === 'edit').at(-1)!;
   expect(edit.ops).toEqual([{ op: 'setNote', id: 'a', note: '第一行\n第二行' }]);
@@ -155,6 +168,27 @@ test('note 里回车回到正文末尾', async ({ page }) => {
   await page.locator('.node[data-id="a"] > .note').click();
   await page.keyboard.press('Enter');
   expect(await caretState(page)).toEqual({ id: 'a', offset: 4 });
+});
+
+test('输入 note 再清空并失焦 → 空 note 归一为 null，不残留空行、不上报 note:""', async ({ page }) => {
+  await openOutline(page, [node('a', 'body')]);
+  await focusText(page, 'a', 4);
+  await page.keyboard.press('Shift+Enter'); // 创建 note 并聚焦
+  await inject(page, { type: 'ack', seq: 1, version: 2 });
+  await page.keyboard.type('临时');
+  const noteEl = page.locator('.node[data-id="a"] > .note');
+  await expect(noteEl).toHaveText('临时');
+
+  // 清空 note 内容
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('Backspace');
+  await expect(noteEl).toHaveText('');
+  await clearPosted(page);
+
+  // 焦点移回正文 → note 失焦后应被移除（不再占一行）。移除只可能来自归一的 setNote(null)，
+  // 所以 DOM 消失即证明「空 note 归一为 null」发生了 —— 这条红线（不往 .md 写空白行）由此守住。
+  await page.locator('.node[data-id="a"] [data-field="text"]').click();
+  await expect(page.locator('.node[data-id="a"] > .note')).toHaveCount(0);
 });
 
 test('zoom：只渲染子树，面包屑可回退', async ({ page }) => {

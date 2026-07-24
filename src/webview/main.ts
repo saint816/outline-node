@@ -58,6 +58,7 @@ const sidebar = new SidebarView({
     saveViewState();
     render();
   },
+  onMove: (id, parentId, index) => store.dispatch({ op: 'move', id, parentId, index }),
 });
 const toolbar = new Toolbar(
   {
@@ -80,6 +81,8 @@ app.append(sidebar.el, mainCol);
 document.body.append(app);
 
 let nextCaret: CaretPos | null = null;
+/** 下一帧渲染后把焦点放进这个代码块的 textarea（toCodeBlock 后用）。 */
+let nextCodeFocus: string | null = null;
 let ready = false;
 const EMPTY_FOLDS: ReadonlySet<string> = new Set<string>();
 
@@ -105,6 +108,13 @@ function render(): void {
   scheduleChrome();
   syncPlaceholder();
   if (caret) restoreCaret(caret);
+  if (nextCodeFocus !== null) {
+    const area = root.querySelector<HTMLTextAreaElement>(
+      `.raw-block[data-block-id="${nextCodeFocus}"] textarea.code-input`,
+    );
+    nextCodeFocus = null;
+    area?.focus();
+  }
   saveViewState();
   // 首帧分片：剩下的节点下一帧继续挂（见 docs/07）
   if (result.truncated) requestAnimationFrame(render);
@@ -191,6 +201,10 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
       }
       applyRefresh(msg);
       return;
+    case 'imageSaved':
+      // 图片已落盘：重渲染让刚插入的 ![[name]] 预览能真正加载到文件
+      render();
+      return;
   }
 });
 
@@ -229,6 +243,10 @@ root.addEventListener('input', (event) => {
   if (!(target instanceof HTMLElement) || !target.dataset.field) return;
   // 组合期间不发 setText（红线 4）
   if (ime.composing) return;
+  if (target.dataset.field === 'code') {
+    commitCodeBlock(target);
+    return;
+  }
   commitFieldText(target);
 });
 
@@ -237,6 +255,22 @@ function commitFieldText(target: HTMLElement): void {
   if (!id) return;
   if (target.dataset.field === 'note') store.setNodeNote(id, target.innerText);
   else store.setNodeText(id, target.textContent ?? '');
+}
+
+/** 代码块 textarea 改动 → 重建整块行（保留首尾围栏）→ setRawBlock。 */
+function commitCodeBlock(target: HTMLElement): void {
+  if (!(target instanceof HTMLTextAreaElement)) return;
+  const block = target.closest<HTMLElement>('.raw-block');
+  const blockId = block?.dataset.blockId;
+  if (!block || !blockId) return;
+  // textarea 随内容增高，避免加行时看不到
+  target.style.height = 'auto';
+  target.style.height = `${target.scrollHeight}px`;
+  const open = block.dataset.codeOpen ?? '```';
+  const body = target.value.split('\n');
+  const lines =
+    'codeClose' in block.dataset ? [open, ...body, block.dataset.codeClose as string] : [open, ...body];
+  store.setRawBlockLines(blockId, lines);
 }
 
 // undo 三道闸之一：封死浏览器原生 undo 栈的一切入口（含右键菜单）
@@ -258,6 +292,9 @@ root.addEventListener('keydown', (event) => {
     clearSearch: () => search.clear(),
     navigate: (id) => navigate(id),
     toggleHideCompleted: () => store.toggleHideCompleted(),
+    focusCodeBlock: (blockId) => {
+      nextCodeFocus = blockId;
+    },
   });
 });
 
@@ -374,7 +411,25 @@ async function writeClipboard(text: string): Promise<void> {
 }
 
 // 失焦 / 页面隐藏时立即 flush，缩小丢失窗口
-root.addEventListener('focusout', () => store.flushPending(), true);
+root.addEventListener('focusout', (event) => {
+  store.flushPending();
+  // 空 note 失焦 → 归一为 null：移除残留空行，并避免 serializer 把 note:'' 写成一行空白（红线 1）。
+  // 用 macrotask 推迟到焦点转移完成后再动 DOM，不打断正在进行的 focus 切换（同 scheduleChrome 思路）。
+  const el = event.target;
+  if (el instanceof HTMLElement && el.dataset.field === 'note') {
+    const id = el.closest<HTMLElement>('.node')?.dataset.id;
+    // 用 DOM 实际内容判空（contenteditable 清空后 innerText 可能残留换行，别只比对存储值）
+    const empty = el.innerText.trim() === '';
+    setTimeout(() => {
+      if (!id || !empty) return;
+      const node = store.findNode(id);
+      if (node && node.note !== null) {
+        store.setNodeNote(id, null);
+        render();
+      }
+    }, 0);
+  }
+}, true);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     store.flushPending();
@@ -389,6 +444,7 @@ installClipboard(root, {
   setNextCaret: (pos) => {
     nextCaret = pos;
   },
+  saveImage: (name, dataBase64) => send({ type: 'saveImage', name, dataBase64 }),
 });
 
 installImeGuard(root, {

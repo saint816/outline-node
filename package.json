@@ -2,7 +2,7 @@
   "name": "outline-node",
   "displayName": "OutlineNode — Workflowy-style Outliner",
   "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "publisher": "outlinenode",
   "icon": "media/icon.png",
@@ -73,9 +73,48 @@
     "commands": [
       {
         "command": "outlineNode.openAsOutline",
-        "title": "OutlineNode: Open as Outline"
+        "title": "%command.openAsOutline.title%",
+        "category": "OutlineNode",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "outlineNode.openAsText",
+        "title": "%command.openAsText.title%",
+        "category": "OutlineNode",
+        "icon": "$(code)"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "outlineNode.openAsText",
+          "when": "activeCustomEditorId == outlineNode.outline || activeCustomEditorId == outlineNode.outlineOptional",
+          "group": "navigation@1"
+        },
+        {
+          "command": "outlineNode.openAsOutline",
+          "when": "editorLangId == markdown && resourceExtname =~ /\\.md$/",
+          "group": "navigation@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "outlineNode.openAsOutline",
+          "when": "resourceExtname =~ /\\.md$/",
+          "group": "navigation@30"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "outlineNode.openAsText",
+          "when": "activeCustomEditorId == outlineNode.outline || activeCustomEditorId == outlineNode.outlineOptional"
+        },
+        {
+          "command": "outlineNode.openAsOutline",
+          "when": "editorLangId == markdown"
+        }
+      ]
+    },
     "configuration": {
       "title": "OutlineNode",
       "properties": {
