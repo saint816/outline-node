@@ -65,7 +65,7 @@ const toolbar = new Toolbar(
   {
     onBack: () => zoomHistory.back(),
     onForward: () => zoomHistory.forward(),
-    onToggleHideCompleted: () => store.toggleHideCompleted(),
+    onToggleHideCompleted: () => toggleHideCompletedWithFocus(),
     onHelp: () => help.toggle(),
   },
   search.el,
@@ -215,11 +215,24 @@ window.addEventListener('message', (event: MessageEvent<unknown>) => {
       applyRefresh(msg);
       return;
     case 'imageSaved':
-      // 图片已落盘：重渲染让刚插入的 ![[name]] 预览能真正加载到文件
-      render();
+      // 图片已落盘。粘贴时预览 <img> 早于写盘就发过请求（404 且被缓存），syncImages 又因
+      // src 未变而早退、不重建——必须显式给匹配 img 打 cache-bust 强制重新拉取（BUG-005）。
+      render(); // 兜底：img 尚未建出来时先建（此时文件已存在，clean URL 直接加载得到）
+      reloadSavedImage(msg.name);
       return;
   }
 });
+
+/** imageSaved 后强制重载该图的预览 <img>（绕开 404 缓存，见 imageSaved 分支）。 */
+function reloadSavedImage(name: string): void {
+  const encoded = encodeURIComponent(name);
+  for (const img of root.querySelectorAll<HTMLImageElement>('img.node-image')) {
+    const src = img.getAttribute('src') ?? '';
+    if (src.includes(name) || src.includes(encoded)) {
+      img.src = src.split('?')[0] + '?saved=' + Date.now();
+    }
+  }
+}
 
 function applyRefresh(msg: Extract<H2W, { type: 'refresh' }>): void {
   // refresh 会丢弃未 ack 的本地 op，把 contenteditable 里尚未提交的文本重新提交一次，
@@ -299,6 +312,11 @@ root.addEventListener('beforeinput', (event) => {
 });
 
 root.addEventListener('keydown', (event) => {
+  // 代码块 textarea 的出口手势（keymap 对 textarea 不生效，saveCaret 返回 null）
+  const target = event.target;
+  if (target instanceof HTMLTextAreaElement && target.dataset.field === 'code') {
+    if (handleCodeBlockKeydown(event, target)) return;
+  }
   // 斜杠菜单激活时优先吃掉导航键（↑↓/Enter/Tab/Esc），keymap 不再处理
   if (event.key !== 'Process' && !event.isComposing && slashMenu.handleKeydown(event)) return;
   handleKeydown(event, {
@@ -312,18 +330,62 @@ root.addEventListener('keydown', (event) => {
     focusSearch: () => search.focus(),
     clearSearch: () => search.clear(),
     navigate: (id) => navigate(id),
-    toggleHideCompleted: () => store.toggleHideCompleted(),
     focusCodeBlock: (blockId) => {
       nextCodeFocus = blockId;
     },
   });
 });
 
+/**
+ * 代码块 textarea 的出口手势（代码块只能顶层、是文档级 RawBlock，容易变成死胡同）：
+ * - Cmd/Ctrl+Enter：在代码块后新建一个顶层节点并聚焦（BUG-003）。
+ * - 空代码块上 Backspace/Delete：删掉整个围栏代码块，焦点落到相邻节点（BUG-004）。
+ * 返回 true = 已消费。
+ */
+function handleCodeBlockKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): boolean {
+  const blockEl = area.closest<HTMLElement>('.raw-block');
+  const blockId = blockEl?.dataset.blockId;
+  if (!blockEl || !blockId) return false;
+
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    const id = nanoid();
+    nextCaret = { nodeId: id, field: 'text', offset: 0 };
+    store.dispatch({ op: 'insertRootAfterBlock', afterBlockId: blockId, id, blockId: nanoid() });
+    return true;
+  }
+
+  if ((e.key === 'Backspace' || e.key === 'Delete') && area.value === '') {
+    e.preventDefault();
+    const neighbor = adjacentNodeId(blockEl);
+    if (neighbor) nextCaret = { nodeId: neighbor, field: 'text', offset: 0 };
+    store.dispatch({ op: 'deleteRawBlock', id: blockId });
+    return true;
+  }
+  return false;
+}
+
+/** raw-block 相邻的 top-level 节点 id：优先前一个，否则后一个（删代码块后焦点落点）。 */
+function adjacentNodeId(blockEl: HTMLElement): string | null {
+  const pick = (dir: 'previousElementSibling' | 'nextElementSibling'): string | null => {
+    let el: Element | null = blockEl[dir];
+    while (el && !el.classList.contains('node')) el = el[dir];
+    return el?.getAttribute('data-id') ?? null;
+  };
+  return pick('previousElementSibling') ?? pick('nextElementSibling');
+}
+
 // 帮助浮层：? 开关（焦点不在可编辑元素里时，避免吞掉输入的「?」），Esc 关闭。
-// 挂在 document 上，这样焦点在侧栏/工具条时也能触发。
+// 隐藏已完成（Cmd/Ctrl+O）也挂在 document 上——隐藏后被隐藏节点的焦点会掉到 body，
+// root 级监听收不到第二次按键（BUG-002 焦点陷阱）。document 级则焦点在哪都能触发。
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && help.isOpen()) {
     help.close();
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && (event.key === 'o' || event.key === 'O')) {
+    event.preventDefault();
+    toggleHideCompletedWithFocus();
     return;
   }
   if (event.key === '?' && !isEditableTarget(event.target)) {
@@ -331,6 +393,21 @@ document.addEventListener('keydown', (event) => {
     help.toggle();
   }
 });
+
+/** 切换隐藏已完成；若隐藏导致当前焦点节点消失，把焦点迁到最近的可见节点（BUG-002）。 */
+function toggleHideCompletedWithFocus(): void {
+  const active = document.activeElement;
+  const activeNode = active instanceof HTMLElement ? active.closest<HTMLElement>('.node') : null;
+  store.toggleHideCompleted(); // 同步 emit → render → applyFilters，返回后 .hidden 已生效
+  if (activeNode && activeNode.offsetParent === null) {
+    const visible = [...root.querySelectorAll<HTMLElement>('.node')].find(
+      (n) => n.offsetParent !== null,
+    );
+    const field = visible?.querySelector<HTMLElement>('[data-field="text"]');
+    if (field) field.focus();
+    else search.focus(); // 全部隐藏时不把焦点留在 body
+  }
+}
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

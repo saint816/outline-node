@@ -1,7 +1,7 @@
 // Phase 2 图片：节点正文内图片预览、独立成行图片块、镜像/块引用不误判为图片。
 // 0.4.0：粘贴图片（写盘 + 插入 ![[name]]）。
 import { expect, test } from '@playwright/test';
-import { CONFIG, HARNESS, focusText, inject, node, openOutline, posted } from './support.js';
+import { CONFIG, HARNESS, clearPosted, focusText, inject, node, openOutline, posted } from './support.js';
 
 // 1×1 透明 PNG（无空格 / 无右括号，可安全放进 ![](...)）
 const PNG_B64 =
@@ -112,6 +112,8 @@ test('粘贴图片：光标处插入 ![[pasted-…]]，发出带 base64 的 save
   const img = page.locator('.node[data-id="a"] .node-images img.node-image');
   await expect(img).toHaveCount(1);
   await expect(img).toHaveAttribute('src', new RegExp(saveMsg.name.replace(/\./g, '\\.')));
+  // BUG-005：预览请求早于写盘会 404 被缓存，imageSaved 必须给 img 打 cache-bust 强制重载
+  await expect(img).toHaveAttribute('src', /\?saved=/);
 });
 
 test('顶层空根节点打 ```lang 回车 → 转成代码块并聚焦，其余节点保留', async ({ page }) => {
@@ -197,4 +199,77 @@ test('编辑代码块正文：改动经 setRawBlock 上报，保留首尾围栏'
     undefined,
     { timeout: 3000 },
   );
+});
+
+/** 注入「一个列表节点 + 一个代码块」的文档。code 为代码块正文（空串 = 空块）。 */
+async function injectListThenCode(page: import('@playwright/test').Page, code: string): Promise<void> {
+  await page.goto(HARNESS);
+  await page.waitForFunction(() => (window as never as { __posted: unknown[] }).__posted.length > 0);
+  await inject(page, {
+    type: 'init',
+    version: 1,
+    foldedKeys: [],
+    config: CONFIG,
+    snapshot: {
+      indentUnit: { kind: 'space', width: 2 },
+      blocks: [
+        {
+          kind: 'list',
+          id: 'l1',
+          roots: [
+            { id: 'a', text: 'a', checked: null, note: null, blockId: null, mirror: null, children: [], raw: null },
+          ],
+        },
+        { kind: 'raw', id: 'CB', lines: ['```', ...(code ? [code] : ['']), '```'] },
+      ],
+    },
+  });
+}
+
+test('代码块内 Cmd/Ctrl+Enter 在其后新建顶层节点并聚焦（BUG-003）', async ({ page }) => {
+  await injectListThenCode(page, '');
+  await page.locator('.raw-block.code-block textarea.code-input').focus();
+  await page.keyboard.press('ControlOrMeta+Enter');
+
+  // 代码块后多出一个节点，且焦点落在其正文
+  await expect(page.locator('.node')).toHaveCount(2);
+  const info = await page.evaluate(() => {
+    const active = document.activeElement as HTMLElement | null;
+    const nodeEl = active?.closest('.node');
+    const block = document.querySelector('.raw-block.code-block');
+    // 新节点在代码块之后
+    const after =
+      block && nodeEl ? !!(block.compareDocumentPosition(nodeEl) & Node.DOCUMENT_POSITION_FOLLOWING) : false;
+    return { field: active?.getAttribute('data-field'), after };
+  });
+  expect(info.field).toBe('text');
+  expect(info.after).toBe(true);
+});
+
+test('空代码块 Backspace 删除整个代码块，焦点落到相邻节点（BUG-004）', async ({ page }) => {
+  await injectListThenCode(page, '');
+  await clearPosted(page);
+  await page.locator('.raw-block.code-block textarea.code-input').focus();
+  await page.keyboard.press('Backspace');
+
+  await expect(page.locator('.raw-block.code-block')).toHaveCount(0);
+  await expect(page.locator('.node[data-id="a"]')).toHaveCount(1);
+  await page.waitForFunction(
+    () =>
+      (window as never as { __posted: { type: string; ops?: { op: string }[] }[] }).__posted.some(
+        (m) => m.type === 'edit' && (m.ops ?? []).some((o) => o.op === 'deleteRawBlock'),
+      ),
+    undefined,
+    { timeout: 3000 },
+  );
+});
+
+test('非空代码块 Backspace 不删块（只删字符）', async ({ page }) => {
+  await injectListThenCode(page, 'x');
+  const area = page.locator('.raw-block.code-block textarea.code-input');
+  await area.focus();
+  // 光标移到末尾再 Backspace：删掉字符 x，代码块仍在
+  await page.keyboard.press('End');
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('.raw-block.code-block')).toHaveCount(1);
 });

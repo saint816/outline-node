@@ -25,7 +25,6 @@ export interface KeymapContext {
   clearSearch(): void;
   /** zoom 导航（走前进/后退历史），null = 回到全部。 */
   navigate(id: string | null): void;
-  toggleHideCompleted(): void;
   /** 转成代码块后，把焦点放进该块 textarea（下一帧）。 */
   focusCodeBlock(blockId: string): void;
 }
@@ -54,12 +53,8 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
     return;
   }
 
-  // 隐藏 / 显示已完成（Workflowy ⌘O）
-  if (mod && (e.key === 'o' || e.key === 'O')) {
-    e.preventDefault();
-    ctx.toggleHideCompleted();
-    return;
-  }
+  // 隐藏 / 显示已完成（Workflowy ⌘O）在 document 级监听（见 main.ts）：隐藏后被隐藏
+  // 节点的焦点会掉到 body，root 级监听收不到第二次按键（焦点陷阱，BUG-002）。
 
   // undo 三道闸之二：转发给 host 执行 VS Code 的 undo（红线 5）
   if (mod && (e.key === 'z' || e.key === 'Z')) {

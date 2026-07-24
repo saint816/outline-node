@@ -441,6 +441,68 @@ describe('代码块 op（setRawBlock / toCodeBlock，路线 B）', () => {
   });
 });
 
+describe('deleteRawBlock / insertRootAfterBlock（代码块边界 op，BUG-003/004）', () => {
+  it('deleteRawBlock 删末尾代码块', () => {
+    const doc = parse('- a\n```\ncode\n```\n');
+    const code = doc.blocks.find((b) => b.kind === 'raw')!;
+    expect(applyOp(doc, { op: 'deleteRawBlock', id: code.id }).changed).toBe(true);
+    expect(serializeOutline(doc)).toBe('- a\n');
+  });
+
+  it('deleteRawBlock 删中间代码块，合并前后 ListBlock（与重解析一致）', () => {
+    const doc = parse('- a\n```\nx\n```\n- b\n');
+    const code = doc.blocks.find((b) => b.kind === 'raw')!;
+    applyOp(doc, { op: 'deleteRawBlock', id: code.id });
+    expect(serializeOutline(doc)).toBe('- a\n- b\n');
+    expect(shapeOfBlocks(doc)).toEqual(['list:2']);
+    expect(shapeOfBlocks(parse(serializeOutline(doc)))).toEqual(shapeOfBlocks(doc));
+  });
+
+  it('deleteRawBlock 拒绝非围栏 RawBlock（标题不可删，守不变式 2）', () => {
+    const doc = parse('# H\n- a\n');
+    const raw = doc.blocks.find((b) => b.kind === 'raw')!;
+    expect(applyOp(doc, { op: 'deleteRawBlock', id: raw.id }).changed).toBe(false);
+    expect(serializeOutline(doc)).toBe('# H\n- a\n');
+  });
+
+  it('deleteRawBlock ghost id → no-op', () => {
+    const doc = parse('```\nx\n```\n');
+    expect(applyOp(doc, { op: 'deleteRawBlock', id: 'ghost' }).changed).toBe(false);
+  });
+
+  it('insertRootAfterBlock 在末尾代码块后新建空根节点（新 ListBlock）', () => {
+    const doc = parse('- a\n```\nx\n```\n');
+    const code = doc.blocks.find((b) => b.kind === 'raw')!;
+    const r = applyOp(doc, { op: 'insertRootAfterBlock', afterBlockId: code.id, id: 'N', blockId: 'LB' });
+    expect(r.changed).toBe(true);
+    expect(shapeOfBlocks(doc)).toEqual(['list:1', 'raw:```|x|```', 'list:1']);
+    const last = doc.blocks[2];
+    expect(last.kind === 'list' && last.roots[0].id).toBe('N');
+    expect(shapeOfBlocks(parse(serializeOutline(doc)))).toEqual(shapeOfBlocks(doc));
+  });
+
+  it('insertRootAfterBlock 已有后继 ListBlock → 插到它开头', () => {
+    const doc = parse('```\nx\n```\n- b\n');
+    const code = doc.blocks.find((b) => b.kind === 'raw')!;
+    applyOp(doc, { op: 'insertRootAfterBlock', afterBlockId: code.id, id: 'N', blockId: 'LB' });
+    expect(shapeOfBlocks(doc)).toEqual(['raw:```|x|```', 'list:2']);
+    const list = doc.blocks[1];
+    expect(list.kind === 'list' && list.roots[0].id).toBe('N');
+  });
+
+  it('insertRootAfterBlock id 冲突 → no-op', () => {
+    const doc = parse('- a\n```\nx\n```\n');
+    const code = doc.blocks.find((b) => b.kind === 'raw')!;
+    const r = applyOp(doc, {
+      op: 'insertRootAfterBlock',
+      afterBlockId: code.id,
+      id: idOf(doc, 'a'),
+      blockId: 'LB',
+    });
+    expect(r.changed).toBe(false);
+  });
+});
+
 function shapeOfBlocks(doc: OutlineDoc): string[] {
   return doc.blocks.map((b) => (b.kind === 'raw' ? `raw:${b.lines.join('|')}` : `list:${b.roots.length}`));
 }

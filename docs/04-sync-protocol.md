@@ -79,7 +79,9 @@ export type Op =
   | { op: 'delete';   id: string }
   | { op: 'assignBlockId'; id: string; blockId: string }   // 镜像功能用（见 06），M6 前可不实现
   | { op: 'setRawBlock'; id: string; lines: string[] }     // 编辑围栏代码块（唯一能改 RawBlock.lines 的 op，见 02）
-  | { op: 'toCodeBlock'; id: string; lang: string; blockId: string; restId: string };  // 空顶层根节点 → 顶层代码块
+  | { op: 'toCodeBlock'; id: string; lang: string; blockId: string; restId: string }  // 空顶层根节点 → 顶层代码块
+  | { op: 'deleteRawBlock'; id: string }                   // 删围栏代码块（BUG-004）
+  | { op: 'insertRootAfterBlock'; afterBlockId: string; id: string; blockId: string };  // 某块后新建空根节点（BUG-003）
 
 export interface OpResult { changed: boolean }   // false = no-op（如首节点 indent）
 export function applyOp(doc: OutlineDoc, op: Op): OpResult;   // 原地修改 doc
@@ -104,6 +106,8 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult;   // 原地修改 do
 - **assignBlockId**：设置节点的 `blockId`（创建镜像前置步骤，见 06）；文档内已存在同名 blockId → no-op；`raw = null`。
 - **setRawBlock**：按 `id` 找到 RawBlock，整块替换 `lines`。**唯一能改 `RawBlock.lines` 的 op**（见 02 不变式 2 的例外）。守卫：目标不存在、不是 raw、或首行不是围栏（`` ``` `` / `~~~`）→ no-op（护住 frontmatter/标题等其余 RawBlock 的不可变性）；`lines` 与原相同 → no-op。webview 编辑代码块正文时保留首尾围栏行、只换中间正文。
 - **toCodeBlock**：把**空的顶层根节点**转成顶层代码块。守卫：目标不存在、`parent !== null`（非根）、或有 `children`/`note`/`mirror` → no-op。执行：把该节点所在 ListBlock 从它的位置切开——`before` 段保留原 block id，插入代码块 RawBlock（id = `blockId`，`lines = ['```'+lang, '', '```']`），`after` 段用新 block id `restId`；空段不产出。`blockId`/`restId` 由 webview 生成、host 采纳，保证两端结构确定性一致（同 split 的 `newId`）。
+- **deleteRawBlock**：删除**围栏代码块** RawBlock（BUG-004）。守卫：目标不存在、不是 raw、或首行不是围栏 → no-op（其余 RawBlock 不可删）。执行：移除该块；若删后**前后都是 ListBlock** 则合并成一个（否则模型里会留下两个相邻 ListBlock，与「重解析同一文本」得到的单个 ListBlock 不一致）。webview 手势：空代码块 textarea 上 Backspace/Delete。
+- **insertRootAfterBlock**：在 `afterBlockId` 块后插入一个**空的顶层根节点**（id = `id`）（BUG-003：末尾代码块后继续录入的出口）。已有后继 ListBlock → 插到它开头；否则新建 ListBlock（id = `blockId`，webview 生成、host 采纳）。守卫：`id` 已存在、`afterBlockId` 不存在、或新建时 `blockId` 冲突 → no-op。webview 手势：代码块 textarea 上 Cmd/Ctrl+Enter。
 
 结构性 op（除 setText/setNote 外全部）导致被移动/修改节点 `raw = null`；子树内其他节点 raw 保留，靠 `raw.depth` 失配机制自动重生成（见 02）。
 

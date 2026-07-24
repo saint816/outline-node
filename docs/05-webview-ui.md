@@ -103,6 +103,11 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 
 围栏代码块 RawBlock 渲染为语言标签 + 可编辑 `textarea`（`data-field="code"`），元素上带 `data-block-id`（renderer 注入）。textarea `input` 经 main.ts 委托重建整块行（保留 `data-code-open` / `data-code-close` 原始围栏）→ `store.setRawBlockLines` → `setRawBlock` op（热路径不重渲染，同 setNodeText）。正在编辑本块时 `updateRawBlockView` 一票跳过（`el.contains(document.activeElement)`），不打断输入。创建见快捷键表 ` ``` ` 行。
 
+**出口手势**（代码块是文档级块、只能顶层，容易变死胡同，见 02）：keymap 对 textarea 不生效（`saveCaret` 返回 null），故在 main.ts 的 root keydown 里单独处理——
+
+- **Cmd/Ctrl+Enter**：在代码块后新建一个顶层节点并聚焦（`insertRootAfterBlock`，BUG-003）。
+- **空代码块上 Backspace/Delete**：删掉整个围栏代码块，焦点落到相邻节点（`deleteRawBlock`，BUG-004）。非空时不触发（正常删字符），要删有内容的块先清空正文。
+
 ## 斜杠插入菜单（slashMenu.ts）
 
 Workflowy 式 `/` 菜单：在正文（`text` 字段）词首（行首或空白后）输入 `/` 弹出可过滤菜单，`/` 后连续非空白串为 query。↑↓ 选、Enter/Tab 确认、Esc 忽略（同一 token 不再自动弹）、光标移出 token 或失焦即关。菜单由 `input` 委托在 `setNodeText` 之后 `sync()` 重算；`keydown` 在 keymap 之前拦导航键（激活且有匹配时）。

@@ -17,6 +17,8 @@ const SHORTCUTS: { keys: string; labelKey: MessageKey }[] = [
   { keys: 'Cmd/Ctrl+O', labelKey: 'help.hideCompleted' },
   { keys: 'Cmd/Ctrl+Shift+7', labelKey: 'help.ordered' },
   { keys: '/', labelKey: 'help.slash' },
+  { keys: 'Cmd/Ctrl+Enter（代码块内）', labelKey: 'help.codeExit' },
+  { keys: 'Backspace（空代码块）', labelKey: 'help.codeDelete' },
   { keys: '?', labelKey: 'help.help' },
 ];
 

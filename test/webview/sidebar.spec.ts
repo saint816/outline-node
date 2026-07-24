@@ -167,6 +167,29 @@ test('Cmd/Ctrl+O 隐藏已完成节点（连整棵子树），再按恢复', asy
   await expect(page.locator('.node[data-id="a"]')).toBeVisible();
 });
 
+test('焦点在完成节点上按 Cmd/Ctrl+O：隐藏后焦点迁到可见节点，再按能恢复（BUG-002）', async ({
+  page,
+}) => {
+  await openOutline(page, [node('a', 'Done'), node('b', 'Todo')]);
+
+  // 让完成节点 a 自己持有焦点
+  await focusText(page, 'a', 0);
+  await page.keyboard.press('Control+Enter');
+  await focusText(page, 'a', 0);
+
+  // 第一次：隐藏 a。焦点不能留在被隐藏的 a（否则 root 级监听收不到下次按键）
+  await page.keyboard.press('Control+o');
+  await expect(page.locator('.node[data-id="a"]')).toBeHidden();
+  const focusedNodeId = await page.evaluate(
+    () => document.activeElement?.closest('.node')?.getAttribute('data-id') ?? null,
+  );
+  expect(focusedNodeId).toBe('b'); // 焦点已迁到可见节点，不在 body
+
+  // 第二次：同一快捷键必须能恢复显示（陷阱已解）
+  await page.keyboard.press('Control+o');
+  await expect(page.locator('.node[data-id="a"]')).toBeVisible();
+});
+
 test('工具条 zoom 后退 / 前进', async ({ page }) => {
   await openOutline(page, [node('a', 'A', [node('a1', 'A1')]), node('b', 'B')]);
 

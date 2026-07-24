@@ -57,6 +57,8 @@ export type MessageKey =
   | 'help.ordered'
   | 'help.help'
   | 'help.slash'
+  | 'help.codeExit'
+  | 'help.codeDelete'
   | 'slash.ariaLabel'
   | 'slash.noResults'
   | 'slash.codeBlock'
@@ -109,6 +111,8 @@ const EN: Record<MessageKey, string> = {
   'help.ordered': 'Toggle ordered list',
   'help.help': 'Toggle this help',
   'help.slash': 'Open the / insert menu',
+  'help.codeExit': 'New node after code block',
+  'help.codeDelete': 'Delete empty code block',
   'slash.ariaLabel': 'Insert menu',
   'slash.noResults': 'No matches',
   'slash.codeBlock': 'Code block',
@@ -162,6 +166,8 @@ const ZH: Record<MessageKey, string> = {
   'help.ordered': '切换有序列表',
   'help.help': '开关本帮助',
   'help.slash': '打开 / 插入菜单',
+  'help.codeExit': '在代码块后新建节点',
+  'help.codeDelete': '删除空代码块',
   'slash.ariaLabel': '插入菜单',
   'slash.noResults': '无匹配',
   'slash.codeBlock': '代码块',

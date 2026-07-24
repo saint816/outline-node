@@ -126,6 +126,87 @@ test('undo 命令回退到编辑前的文本', async () => {
   await waitFor(() => document.getText() === '- one\n', 'undo applied');
 });
 
+test('BUG-001：两个独立结构 op（中间保存），单次 undo 只回退最后一个', async () => {
+  const uri = tempFile('undo-gran.outline.md', '- a\n- b\n');
+  const { document, session } = await openOutline(uri);
+
+  // op1：把 a 标为完成
+  await session.handleMessage({
+    type: 'edit',
+    baseVersion: document.version,
+    seq: 1,
+    ops: [{ op: 'toggleChecked', id: nodeByText(session, 'a').id }],
+  });
+  await waitFor(() => document.getText() === '- [x] a\n- b\n', 'op1 applied');
+  await vscode.commands.executeCommand('workbench.action.files.save');
+  await waitFor(() => !document.isDirty, 'saved1');
+
+  // op2：把 b 上移，与 a 交换
+  await session.handleMessage({
+    type: 'edit',
+    baseVersion: document.version,
+    seq: 2,
+    ops: [{ op: 'moveUp', id: nodeByText(session, 'b').id }],
+  });
+  await waitFor(() => document.getText() === '- b\n- [x] a\n', 'op2 applied');
+  await vscode.commands.executeCommand('workbench.action.files.save');
+  await waitFor(() => !document.isDirty, 'saved2');
+
+  // 单次 undo 只应回退 op2（移动），a 仍保持完成态
+  await vscode.commands.executeCommand('undo');
+  await waitFor(() => document.getText() === '- [x] a\n- b\n', 'undo 只回退最后一个 op');
+});
+
+test('BUG-001-rapid：两个快速连续 op（不保存），单次 undo 只回退最后一个', async () => {
+  const uri = tempFile('undo-rapid.outline.md', '- a\n- b\n- c\n');
+  const { document, session } = await openOutline(uri);
+
+  await session.handleMessage({
+    type: 'edit',
+    baseVersion: document.version,
+    seq: 1,
+    ops: [{ op: 'indent', id: nodeByText(session, 'b').id }],
+  });
+  await waitFor(() => document.getText() === '- a\n  - b\n- c\n', 'op1 applied');
+
+  // 紧接着第二个 op，不保存、不等（模拟 Tab/Shift+Tab 快速连打）
+  await session.handleMessage({
+    type: 'edit',
+    baseVersion: document.version,
+    seq: 2,
+    ops: [{ op: 'indent', id: nodeByText(session, 'c').id }],
+  });
+  await waitFor(() => document.getText() === '- a\n  - b\n  - c\n', 'op2 applied');
+
+  // 单次 undo 只应回退 op2（c 的缩进），b 的缩进保留
+  await vscode.commands.executeCommand('undo');
+  await waitFor(() => document.getText() === '- a\n  - b\n- c\n', 'rapid undo 只回退最后一个 op');
+});
+
+// undo 粒度契约：一条 edit 消息 = 一次 applyEdit = 一个 undo step。webview 在 ack 往返前把
+// 多个 op 批进同一条消息时它们一起 undo（单-in-flight 协议的固有结果，非 BUG-001）。
+// BUG-001 报告的「间隔操作被合并」在上面两条用例里已证明不复现——独立消息各自成 undo step。
+test('undo 粒度：一条 edit 消息（批处理多 op）单次 undo 一起退', async () => {
+  const uri = tempFile('undo-batched.outline.md', '- a\n- b\n- c\n');
+  const { document, session } = await openOutline(uri);
+
+  // 模拟 webview 在 ack 之前把两个 op 批进同一条消息
+  await session.handleMessage({
+    type: 'edit',
+    baseVersion: document.version,
+    seq: 1,
+    ops: [
+      { op: 'indent', id: nodeByText(session, 'b').id },
+      { op: 'indent', id: nodeByText(session, 'c').id },
+    ],
+  });
+  await waitFor(() => document.getText() === '- a\n  - b\n  - c\n', 'batched applied');
+
+  // 一条消息 = 一次 applyEdit = 一个 undo step：单次 undo 回退整条消息（符合预期，非 bug）
+  await vscode.commands.executeCommand('undo');
+  await waitFor(() => document.getText() === '- a\n- b\n- c\n', 'batched undo 全退');
+});
+
 test('外部 fs.writeFile 后文档与 session 同步', async () => {
   const uri = tempFile('external.outline.md', '- keep\n');
   const { document, session } = await openOutline(uri);

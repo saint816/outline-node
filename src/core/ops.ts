@@ -29,7 +29,9 @@ export type Op =
   | { op: 'delete'; id: string }
   | { op: 'assignBlockId'; id: string; blockId: string }
   | { op: 'setRawBlock'; id: string; lines: string[] }
-  | { op: 'toCodeBlock'; id: string; lang: string; blockId: string; restId: string };
+  | { op: 'toCodeBlock'; id: string; lang: string; blockId: string; restId: string }
+  | { op: 'deleteRawBlock'; id: string }
+  | { op: 'insertRootAfterBlock'; afterBlockId: string; id: string; blockId: string };
 
 export interface OpResult {
   changed: boolean; // false = no-op（如首节点 indent）
@@ -83,6 +85,10 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult {
       return setRawBlock(doc, op.id, op.lines);
     case 'toCodeBlock':
       return toCodeBlock(doc, op.id, op.lang, op.blockId, op.restId);
+    case 'deleteRawBlock':
+      return deleteRawBlock(doc, op.id);
+    case 'insertRootAfterBlock':
+      return insertRootAfterBlock(doc, op.afterBlockId, op.id, op.blockId);
   }
 }
 
@@ -132,6 +138,57 @@ function toCodeBlock(
   replacement.push(codeBlock);
   if (after.length) replacement.push({ kind: 'list', id: restId, roots: after });
   doc.blocks.splice(listIdx, 1, ...replacement);
+  return CHANGED;
+}
+
+/** 删除围栏代码块 RawBlock（BUG-004）。删后若前后都是 ListBlock，合并成一个——否则模型里
+ * 会留下两个相邻 ListBlock，与「重解析同一文本」得到的单个 ListBlock 不一致。 */
+function deleteRawBlock(doc: OutlineDoc, id: string): OpResult {
+  const idx = doc.blocks.findIndex((b) => b.id === id);
+  if (idx === -1) return NO_OP;
+  const block = doc.blocks[idx];
+  // 只允许删围栏代码块；frontmatter / 标题 / 正文 / 图片等其余 RawBlock 严格不可删
+  if (block.kind !== 'raw' || block.lines.length === 0 || !FENCE_LINE.test(block.lines[0])) {
+    return NO_OP;
+  }
+  doc.blocks.splice(idx, 1);
+  const before = doc.blocks[idx - 1];
+  const after = doc.blocks[idx];
+  if (before?.kind === 'list' && after?.kind === 'list') {
+    before.roots.push(...after.roots);
+    doc.blocks.splice(idx, 1);
+  }
+  return CHANGED;
+}
+
+/** 在指定块后插入一个空的顶层根节点（BUG-003：末尾代码块后继续录入）。已有后继 ListBlock
+ * 则插到它开头，否则新建一个 ListBlock（id = `blockId`，webview 生成、host 采纳）。 */
+function insertRootAfterBlock(
+  doc: OutlineDoc,
+  afterBlockId: string,
+  id: string,
+  blockId: string,
+): OpResult {
+  if (locate(doc, id)) return NO_OP; // id 冲突
+  const idx = doc.blocks.findIndex((b) => b.id === afterBlockId);
+  if (idx === -1) return NO_OP;
+  const node: OutlineNode = {
+    id,
+    text: '',
+    checked: null,
+    note: null,
+    blockId: null,
+    mirror: null,
+    children: [],
+    raw: null,
+  };
+  const after = doc.blocks[idx + 1];
+  if (after?.kind === 'list') {
+    after.roots.unshift(node);
+  } else {
+    if (doc.blocks.some((b) => b.id === blockId)) return NO_OP; // block id 冲突（invariant 1）
+    doc.blocks.splice(idx + 1, 0, { kind: 'list', id: blockId, roots: [node] });
+  }
   return CHANGED;
 }
 
