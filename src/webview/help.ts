@@ -15,6 +15,7 @@ const SHORTCUTS: { keys: string; labelKey: MessageKey }[] = [
   { keys: 'Cmd/Ctrl+Z / Shift+Z', labelKey: 'help.undo' },
   { keys: 'Cmd/Ctrl+F', labelKey: 'help.search' },
   { keys: 'Cmd/Ctrl+O', labelKey: 'help.hideCompleted' },
+  { keys: 'Cmd/Ctrl+Shift+7', labelKey: 'help.ordered' },
   { keys: '?', labelKey: 'help.help' },
 ];
 

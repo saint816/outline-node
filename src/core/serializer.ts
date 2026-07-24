@@ -83,14 +83,20 @@ function generateIndent(
 }
 
 function renderNode(node: OutlineNode, indent: string, unit: IndentUnit, unitStr: string): string[] {
+  const marker = node.ordered ? node.ordered.num + node.ordered.delim + ' ' : '- ';
   const checkbox = node.checked === true ? '[x] ' : node.checked === false ? '[ ] ' : '';
   const blockId = node.blockId !== null ? ' ^' + node.blockId : '';
-  const lines = [indent + '- ' + checkbox + node.text + blockId];
+  const lines = [indent + marker + checkbox + node.text + blockId];
 
   if (node.note !== null) {
-    // note 续行必须落在内容列（缩进 + "- ".length）之后才会被解析回 note；
-    // 1 空格缩进单位的文档下 unitStr 不够宽，兜底用两个空格。
-    const step = indentWidth(unitStr, unit) >= 2 ? unitStr : '  ';
+    // note 续行必须落在内容列（缩进 + marker 宽度）之后才会被解析回 note。
+    // 有序 marker（`12. `）比 `- ` 宽，须按 marker 宽度对齐；bullet 沿用原逻辑
+    // （1 空格缩进单位下 unitStr 不够宽，兜底两个空格）。
+    const step = node.ordered
+      ? ' '.repeat(marker.length)
+      : indentWidth(unitStr, unit) >= 2
+        ? unitStr
+        : '  ';
     const noteIndent = indent + step;
     for (const noteLine of node.note.split('\n')) lines.push(noteIndent + noteLine);
   }

@@ -2,10 +2,16 @@
 // SPEC-GAP: docs 只钉了 detectIndent 的签名；行级正则与缩进宽度换算是 parser 与
 // detectIndent 共用的实现细节，集中放在本文件，避免两处各写一份而漂移。
 
-import type { IndentUnit } from './model.js';
+import type { IndentUnit, OrderedMarker } from './model.js';
 
-/** 列表项行：缩进 + bullet + 一个空格 + 正文。 */
-export const LIST_ITEM_RE = /^([ \t]*)([-*+]) (.*)$/;
+/** 列表项行：缩进 + marker（bullet 或有序 `1.` / `1)`）+ 一个空格 + 正文。 */
+export const LIST_ITEM_RE = /^([ \t]*)([-*+]|\d{1,9}[.)]) (.*)$/;
+
+/** marker 是有序标记（`1.` / `1)`）时返回 { delim, num }，否则 null（bullet）。 */
+export function parseOrderedMarker(marker: string): OrderedMarker | null {
+  const m = /^(\d{1,9})([.)])$/.exec(marker);
+  return m ? { num: Number(m[1]), delim: m[2] as '.' | ')' } : null;
+}
 
 /** fence 开启/关闭行。 */
 export const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/;

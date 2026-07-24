@@ -16,6 +16,7 @@ export type Op =
   | { op: 'moveDown'; id: string }
   | { op: 'move'; id: string; parentId: string | null; index: number }
   | { op: 'toggleChecked'; id: string }
+  | { op: 'toggleOrdered'; id: string }
   | { op: 'insertSubtree'; parentId: string | null; index: number; nodes: OutlineNode[] }
   | { op: 'delete'; id: string }
   | { op: 'assignBlockId'; id: string; blockId: string };
@@ -58,6 +59,8 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult {
       return move(doc, op.id, op.parentId, op.index);
     case 'toggleChecked':
       return toggleChecked(doc, op.id);
+    case 'toggleOrdered':
+      return toggleOrdered(doc, op.id);
     case 'insertSubtree':
       return insertSubtree(doc, op.parentId, op.index, op.nodes);
     case 'delete':
@@ -96,6 +99,21 @@ function toggleChecked(doc: OutlineDoc, id: string): OpResult {
   return CHANGED;
 }
 
+/** 普通 bullet ↔ 有序项互切。编号：前一个兄弟是有序项则接续，否则从 1 开始。 */
+function toggleOrdered(doc: OutlineDoc, id: string): OpResult {
+  const found = locate(doc, id);
+  if (!found) return NO_OP;
+  const node = found.node;
+  if (node.ordered) {
+    delete node.ordered;
+  } else {
+    const prev = found.index > 0 ? found.siblings[found.index - 1] : null;
+    node.ordered = { delim: '.', num: prev?.ordered ? prev.ordered.num + 1 : 1 };
+  }
+  node.raw = null; // marker 变了，必须重生成
+  return CHANGED;
+}
+
 function split(doc: OutlineDoc, id: string, offset: number, newId: string): OpResult {
   const found = locate(doc, id);
   if (!found) return NO_OP;
@@ -118,6 +136,8 @@ function split(doc: OutlineDoc, id: string, offset: number, newId: string): OpRe
     children: [],
     raw: null,
   };
+  // 有序项拆分：新节点接续编号（不重排前面的项，保最小 diff）
+  if (node.ordered) created.ordered = { delim: node.ordered.delim, num: node.ordered.num + 1 };
   siblings.splice(index + 1, 0, created);
   return CHANGED;
 }

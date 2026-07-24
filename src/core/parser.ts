@@ -10,6 +10,7 @@ import {
   detectIndent,
   indentWidth,
   isFenceClose,
+  parseOrderedMarker,
 } from './indent.js';
 import type { Block, IndentUnit, ListBlock, OutlineDoc, OutlineNode } from './model.js';
 
@@ -113,7 +114,11 @@ function parseBlocks(lines: string[], unit: IndentUnit): Block[] {
 
     if (fence !== null) {
       pushRaw(line);
-      if (isFenceClose(line, fence)) fence = null;
+      if (isFenceClose(line, fence)) {
+        fence = null;
+        // 围栏代码块单独成一个 RawBlock，渲染层才好把它当代码块处理（字节仍原样保留）
+        flushRaw();
+      }
       continue;
     }
 
@@ -124,6 +129,8 @@ function parseBlocks(lines: string[], unit: IndentUnit): Block[] {
     const fenceMatch = FENCE_RE.exec(line);
     if (fenceMatch) {
       fence = fenceMatch[1];
+      // 先收掉前面累积的 raw，让代码块独占一个 RawBlock
+      flushRaw();
       pushRaw(line);
       continue;
     }
@@ -175,6 +182,8 @@ function appendListItem(
 ): void {
   const indent = match[1];
   const width = indentWidth(indent, unit);
+  const marker = match[2];
+  const ordered = parseOrderedMarker(marker);
   let content = match[3];
 
   let checked: boolean | null = null;
@@ -209,6 +218,7 @@ function appendListItem(
     children: [],
     raw: { lines: [line], depth },
   };
+  if (ordered) node.ordered = ordered;
 
   const parent = list.stack[list.stack.length - 1];
   if (parent) parent.node.children.push(node);
@@ -216,7 +226,7 @@ function appendListItem(
 
   list.stack.push({ width, node });
   list.lastNode = node;
-  list.lastContentCol = width + 2; // bullet 长度 1 + 其后的空格
+  list.lastContentCol = width + marker.length + 1; // marker 长度 + 其后的空格
   list.noteLines = [];
   list.noteBaseIndent = null;
 }

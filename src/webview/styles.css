@@ -119,6 +119,21 @@ body {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--vscode-descriptionForeground) 25%, transparent);
 }
 
+/* 有序列表项：bullet 位显示编号，不画圆点 */
+.node-row.ordered > .bullet {
+  width: auto;
+  min-width: 16px;
+  padding-right: 3px;
+  text-align: right;
+  font-size: 0.85em;
+  line-height: 22px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.node-row.ordered > .bullet::before {
+  display: none;
+}
+
 .text,
 .note {
   flex: 1 1 auto;
@@ -331,6 +346,40 @@ body {
 
 .raw-block.image-block .node-image {
   max-height: 400px;
+}
+
+/* ---------- 代码块 ---------- */
+
+.raw-block.code-block {
+  padding: 0;
+  background: none;
+}
+
+.raw-block.code-block .code-pre {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+  overflow-x: auto;
+}
+
+.raw-block.code-block code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+  white-space: pre;
+  color: var(--vscode-editor-foreground);
+}
+
+.code-lang {
+  display: inline-block;
+  margin-bottom: 3px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-badge-background);
 }
 
 .placeholder {

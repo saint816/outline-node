@@ -39,13 +39,21 @@ export interface ListBlock {
 // ---------- 节点 ----------
 export interface OutlineNode {
   id: string;                  // session 内稳定 id（nanoid），不落盘；host 在 init/refresh 分配下发
-  text: string;                // 节点正文（不含 bullet、checkbox、行尾 blockId）
+  text: string;                // 节点正文（不含 bullet/marker、checkbox、行尾 blockId）
   checked: boolean | null;     // null = 普通节点（- text）；false = `- [ ]`；true = `- [x]`
+  ordered?: OrderedMarker;     // 存在 = 有序列表项（`1.` / `1)`）；不存在/undefined = 普通 bullet（`-`）
   note: string | null;         // 节点备注，多行以 '\n' 连接；null = 无备注
   blockId: string | null;      // Obsidian block id（行尾 ^abc123 剥离后存这里），见 06
   mirror: string | null;       // 非 null 时本节点是镜像行，值为目标 blockId，见 06
   children: OutlineNode[];
   raw: RawSource | null;       // 未被编辑时的原始行缓存，保证字节级保真；一经编辑置 null
+}
+
+// 有序列表标记。num 是行内字面数字（解析所得 / split 时 +1 / toggleOrdered 时按前驱推算），
+// 刻意不做自动重排——保持最小 diff（红线 2），Obsidian 打开照常按首项自增渲染。
+export interface OrderedMarker {
+  delim: '.' | ')';
+  num: number;
 }
 
 export interface RawSource {

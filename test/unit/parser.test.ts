@@ -134,12 +134,13 @@ describe('parseOutline — 块边界', () => {
     expect(listBlock(doc, 2).roots.map((n) => n.text)).toEqual(['任务清单', '参考资料']);
   });
 
-  it('代码块内的 "- " 行不得误判为列表项', () => {
+  it('代码块内的 "- " 行不得误判为列表项，且围栏块各自独占 RawBlock', () => {
     const doc = parseOutline(loadFixture('code-fence.md'), PARSE_OPTS);
-    expect(doc.blocks.map((b) => b.kind)).toEqual(['raw', 'list', 'raw']);
-    expect(rawBlock(doc, 0).lines).toContain('- 这是代码块里的列表');
-    expect(listBlock(doc, 1).roots.map((n) => n.text)).toEqual(['真正的列表']);
-    expect(rawBlock(doc, 2).lines).toContain('+ 波浪号 fence 内的伪列表');
+    // 每个围栏代码块单独成一个 RawBlock（渲染层据此当代码块处理），字节仍原样保留
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['raw', 'raw', 'raw', 'list', 'raw', 'raw']);
+    expect(rawBlock(doc, 1).lines).toContain('- 这是代码块里的列表');
+    expect(listBlock(doc, 3).roots.map((n) => n.text)).toEqual(['真正的列表']);
+    expect(rawBlock(doc, 5).lines).toContain('+ 波浪号 fence 内的伪列表');
   });
 
   it('空行分隔的列表拆成多个 ListBlock，空行进 RawBlock', () => {

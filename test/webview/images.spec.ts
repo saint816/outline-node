@@ -57,3 +57,25 @@ test('镜像块引用 / 非图 wiki 嵌入不被当作图片', async ({ page }) 
   await openOutline(page, [node('a', 'ref ![[#^abc123]]'), node('b', 'see ![[some-note]]')]);
   await expect(page.locator('.node-images')).toHaveCount(0);
 });
+
+test('围栏代码块渲染成代码块：隐藏 ``` 围栏、显示语言标签', async ({ page }) => {
+  await page.goto(HARNESS);
+  await page.waitForFunction(() => (window as never as { __posted: unknown[] }).__posted.length > 0);
+  await inject(page, {
+    type: 'init',
+    version: 1,
+    foldedKeys: [],
+    config: CONFIG,
+    snapshot: {
+      indentUnit: { kind: 'space', width: 2 },
+      blocks: [{ kind: 'raw', id: 'r1', lines: ['```js', 'const x = 1;', 'console.log(x);', '```'] }],
+    },
+  });
+
+  const block = page.locator('.raw-block.code-block');
+  await expect(block).toHaveCount(1);
+  await expect(block.locator('.code-lang')).toHaveText('js');
+  await expect(block.locator('code')).toContainText('const x = 1;');
+  await expect(block.locator('code')).toContainText('console.log(x);');
+  await expect(block.locator('code')).not.toContainText('```');
+});

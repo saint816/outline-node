@@ -7,7 +7,7 @@ import { nanoid } from 'nanoid';
 import { parseOutline } from '../../src/core/parser.js';
 import { serializeOutline } from '../../src/core/serializer.js';
 import { applyOp, type Op } from '../../src/core/ops.js';
-import type { OutlineDoc, OutlineNode } from '../../src/core/model.js';
+import type { OrderedMarker, OutlineDoc, OutlineNode } from '../../src/core/model.js';
 import { PARSE_OPTS, flatten, loadFixtures, shapeOf } from './helpers.js';
 
 // 受控字符集：排除已知歧义（`[x] ` 前缀、行尾 ` ^id`、镜像语法 `![[#^id]]`、bullet 前缀）
@@ -26,6 +26,7 @@ const maybeEmptyLine = fc
 interface GenNode {
   text: string;
   checked: boolean | null;
+  ordered: OrderedMarker | null;
   note: string | null;
   blockId: string | null;
   children: GenNode[];
@@ -35,6 +36,10 @@ const { genNode } = fc.letrec<{ genNode: GenNode }>((tie) => ({
   genNode: fc.record({
     text: maybeEmptyLine,
     checked: fc.constantFrom<boolean | null>(null, true, false),
+    ordered: fc.option(
+      fc.record({ delim: fc.constantFrom<'.' | ')'>('.', ')'), num: fc.integer({ min: 1, max: 20 }) }),
+      { nil: null },
+    ),
     note: fc.option(
       fc.array(nonEmptyLine, { minLength: 1, maxLength: 3 }).map((ls) => ls.join('\n')),
       { nil: null },
@@ -52,7 +57,7 @@ const { genNode } = fc.letrec<{ genNode: GenNode }>((tie) => ({
 }));
 
 function toNode(gen: GenNode): OutlineNode {
-  return {
+  const node: OutlineNode = {
     id: nanoid(),
     text: gen.text,
     checked: gen.checked,
@@ -62,6 +67,8 @@ function toNode(gen: GenNode): OutlineNode {
     children: gen.children.map(toNode),
     raw: null,
   };
+  if (gen.ordered) node.ordered = gen.ordered;
+  return node;
 }
 
 function toDoc(gens: GenNode[]): OutlineDoc {
@@ -96,6 +103,11 @@ const LINE_POOL = [
   '- [x] done',
   '* 星号',
   '+ 加号',
+  '1. 有序一',
+  '2. 有序二',
+  '10. 从十',
+  '3) 圆括号',
+  '  1. 缩进有序',
   '- 带 id ^ab12',
   '- ![[#^ab12]]',
   '  note 行',
@@ -169,7 +181,7 @@ function nodeShapes(doc: OutlineDoc): unknown[] {
   const out: unknown[] = [];
   const walk = (nodes: OutlineNode[], depth: number): void => {
     for (const n of nodes) {
-      out.push([n.text, n.checked, n.note, n.blockId, n.mirror, depth]);
+      out.push([n.text, n.checked, n.ordered ?? null, n.note, n.blockId, n.mirror, depth]);
       walk(n.children, depth + 1);
     }
   };

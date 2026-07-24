@@ -2,7 +2,7 @@
   "name": "outline-node",
   "displayName": "OutlineNode — Workflowy-style Outliner",
   "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "publisher": "outlinenode",
   "icon": "media/icon.png",

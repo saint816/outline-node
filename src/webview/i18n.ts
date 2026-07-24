@@ -52,6 +52,7 @@ export type MessageKey =
   | 'help.undo'
   | 'help.search'
   | 'help.hideCompleted'
+  | 'help.ordered'
   | 'help.help';
 
 const EN: Record<MessageKey, string> = {
@@ -94,6 +95,7 @@ const EN: Record<MessageKey, string> = {
   'help.undo': 'Undo / redo',
   'help.search': 'Focus search',
   'help.hideCompleted': 'Hide / show completed',
+  'help.ordered': 'Toggle ordered list',
   'help.help': 'Toggle this help',
 };
 
@@ -137,6 +139,7 @@ const ZH: Record<MessageKey, string> = {
   'help.undo': '撤销 / 重做',
   'help.search': '聚焦搜索框',
   'help.hideCompleted': '隐藏 / 显示已完成',
+  'help.ordered': '切换有序列表',
   'help.help': '开关本帮助',
 };
 

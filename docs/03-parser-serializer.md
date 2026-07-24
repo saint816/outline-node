@@ -23,17 +23,18 @@ export function detectIndent(lines: string[]): IndentUnit | null;  // null = 无
 
 ```
 frontmatter → 仅当第 0 行恰为 '---'：收集至下一个恰为 '---' 的行（含），整体一个 RawBlock
-fence       → 行匹配 /^\s*(```|~~~)/ 进入，收集至匹配同类 fence 的行（含），期间所有行进当前 RawBlock
+fence       → 行匹配 /^\s*(```|~~~)/ 进入，收集至匹配同类 fence 的行（含）。围栏块单独成一个 RawBlock（开启前 flush 旧 raw、闭合后 flush），便于渲染层当代码块处理；字节仍原样保留
 default     → 逐行分类，见下
 ```
 
 ### default 状态下的行分类（按优先级）
 
 1. **note 续行**：当前行紧跟在某列表项（或其 note）之后，且该行非空、有前导空白、`前导空白宽度 ≥ 该列表项的内容列`，且本身不匹配列表项正则 → 归为该列表项的 note 行。
-   - 内容列 = 列表项行的 `缩进宽度 + bullet 长度 + 1`（即 `- ` 之后正文起始列）。
+   - 内容列 = 列表项行的 `缩进宽度 + marker 长度 + 1`（`- ` / `12. ` 之后正文起始列；marker 为 bullet 或有序标记）。
    - note 判定优先于 fence 判定：note 里写 ``` 会被当作 note 文本保留（不进入 fence 状态）。
 2. **fence 开启行**：进入 fence 状态（连带终结当前 ListBlock）。
-3. **列表项行**：正则 `/^([ \t]*)([-*+]) (.*)$/`。命中后进一步剥离：
+3. **列表项行**：正则 `/^([ \t]*)([-*+]|\d{1,9}[.)]) (.*)$/`（marker 为 bullet 或有序 `1.`/`1)`）。命中后进一步剥离：
+   - 有序 marker：`\d+.` / `\d+)` → `ordered = { delim, num }`（num 为行内字面数字，刻意不自动重排，见 02）；bullet 则无 `ordered`；
    - checkbox：正文前缀匹配 `/^\[( |x|X)\] /` → `checked = false | true`，剥掉前缀；
    - blockId：正文行尾匹配 `/ \^([A-Za-z0-9-]+)$/` → 存 `blockId`，剥掉后缀；
    - mirror：剥完后正文**恰为** `![[#^<id>]]` → `mirror = id`（此时 text 保留原文字符串，渲染层特殊处理，见 06）。

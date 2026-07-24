@@ -21,6 +21,7 @@ describe('round-trip', () => {
       'nonstandard.md',
       'notes.md',
       'obsidian-vault.md',
+      'ordered.md',
     ]);
   });
 

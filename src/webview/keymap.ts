@@ -85,6 +85,14 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
     return;
   }
 
+  // 有序列表切换（Cmd/Ctrl+Shift+7，编辑器惯例：7 = 有序，8 = 无序）
+  if (mod && e.shiftKey && e.code === 'Digit7') {
+    e.preventDefault();
+    ctx.setNextCaret(caret);
+    ctx.store.dispatch({ op: 'toggleOrdered', id: caret.nodeId });
+    return;
+  }
+
   if (e.altKey) {
     switch (e.key) {
       case 'ArrowUp':
