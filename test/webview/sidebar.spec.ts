@@ -16,6 +16,30 @@ test('侧栏列出顶层节点，点击即 zoom 进子树', async ({ page }) => 
   await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Beta']);
 });
 
+test('侧栏大纲树可展开/折叠子节点（独立于主编辑区折叠）', async ({ page }) => {
+  await openOutline(page, [
+    node('a', 'Alpha', [node('a1', 'A1'), node('a2', 'A2')]),
+    node('b', 'Beta'),
+  ]);
+  const sidebar = page.locator('.sidebar');
+  // 默认收起：只显示顶层
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', 'Alpha', 'Beta']);
+
+  const alphaToggle = sidebar
+    .locator('.sidebar-item', { hasText: 'Alpha' })
+    .locator('.sidebar-toggle')
+    .first();
+  // 展开 Alpha → 子节点出现，缩进
+  await alphaToggle.click();
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', 'Alpha', 'A1', 'A2', 'Beta']);
+  // 侧栏展开不影响主编辑区（a1 仍在正文里正常显示，未被折叠）
+  await expect(page.locator('#outline-root .node[data-id="a1"]')).toBeVisible();
+
+  // 再点收起
+  await alphaToggle.click();
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', 'Alpha', 'Beta']);
+});
+
 test('星标：进入 Starred 区、节流上报 saveBookmarks，reopen 后按 nodeKey 恢复', async ({ page }) => {
   await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta')]);
 

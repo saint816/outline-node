@@ -31,6 +31,8 @@ export type MessageKey =
   | 'sidebar.empty'
   | 'sidebar.collapsePanel'
   | 'sidebar.expandPanel'
+  | 'sidebar.expandNode'
+  | 'sidebar.collapseNode'
   | 'sidebar.star'
   | 'sidebar.unstar'
   | 'toolbar.back'
@@ -74,6 +76,8 @@ const EN: Record<MessageKey, string> = {
   'sidebar.empty': 'No nodes yet',
   'sidebar.collapsePanel': 'Collapse sidebar',
   'sidebar.expandPanel': 'Expand sidebar',
+  'sidebar.expandNode': 'Expand',
+  'sidebar.collapseNode': 'Collapse',
   'sidebar.star': 'Star',
   'sidebar.unstar': 'Unstar',
   'toolbar.back': 'Back',
@@ -118,6 +122,8 @@ const ZH: Record<MessageKey, string> = {
   'sidebar.empty': '还没有节点',
   'sidebar.collapsePanel': '收起侧栏',
   'sidebar.expandPanel': '展开侧栏',
+  'sidebar.expandNode': '展开',
+  'sidebar.collapseNode': '折叠',
   'sidebar.star': '加星标',
   'sidebar.unstar': '取消星标',
   'toolbar.back': '后退',

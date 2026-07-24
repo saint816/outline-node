@@ -579,7 +579,33 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 0 6px 0 4px;
+  /* 按树深度缩进（--depth 由 JS 设置） */
+  padding: 0 6px 0 calc(4px + var(--depth, 0) * 13px);
+}
+
+.sidebar-toggle {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--vscode-descriptionForeground);
+  font-size: 9px;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.sidebar-toggle.spacer {
+  cursor: default;
+  pointer-events: none;
+}
+
+.sidebar-toggle:hover:not(.spacer) {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground, var(--vscode-editor-foreground));
 }
 
 .sidebar-item.active {
