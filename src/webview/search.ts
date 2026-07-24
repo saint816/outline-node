@@ -2,6 +2,7 @@
 // 过滤只切 class、不动 DOM 结构（性能，见 docs/07）。
 
 import type { Block, OutlineNode } from '../core/model.js';
+import { t } from './i18n.js';
 
 const DEBOUNCE_MS = 150;
 
@@ -17,8 +18,8 @@ export class SearchBox {
     this.input = document.createElement('input');
     this.input.className = 'search-input';
     this.input.type = 'search';
-    this.input.placeholder = '搜索节点…';
-    this.input.setAttribute('aria-label', '搜索节点');
+    this.input.placeholder = t('search.placeholder');
+    this.input.setAttribute('aria-label', t('search.ariaLabel'));
     this.input.addEventListener('input', () => this.schedule());
     this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -63,26 +64,47 @@ export class SearchBox {
 }
 
 /**
- * 按 query 过滤已渲染的节点：命中节点与其全部祖先显示，其余加 .hidden。
- * 匹配大小写不敏感子串，命中 text 与 note。
+ * 过滤已渲染的节点（只切 class、不动 DOM）：搜索命中过滤 + 隐藏已完成，合并成一趟。
+ * 一个 .node 只要被任一过滤器命中就 .hidden——两者取并集，互不覆盖。
+ * 搜索：命中节点与其全部祖先显示；隐藏已完成：已完成节点连同整棵子树收起。
  */
-export function applySearchFilter(root: HTMLElement, blocks: readonly Block[], query: string): void {
+export function applyFilters(
+  root: HTMLElement,
+  blocks: readonly Block[],
+  query: string,
+  hideCompleted: boolean,
+): void {
   const nodes = root.querySelectorAll<HTMLElement>('.node');
-  if (query === '') {
-    for (const el of nodes) {
-      el.classList.remove('hidden', 'search-hit');
-    }
-    root.classList.remove('searching');
-    return;
-  }
+  const searching = query !== '';
+  const search = searching ? matchTree(blocks, query.toLowerCase()) : null;
+  const completed = hideCompleted ? collectCompletedSubtrees(blocks) : null;
 
-  const { visible, hits } = matchTree(blocks, query.toLowerCase());
-  root.classList.add('searching');
+  root.classList.toggle('searching', searching);
   for (const el of nodes) {
     const id = el.dataset.id ?? '';
-    el.classList.toggle('hidden', !visible.has(id));
-    el.classList.toggle('search-hit', hits.has(id));
+    const hiddenBySearch = search !== null && !search.visible.has(id);
+    const hiddenByCompleted = completed !== null && completed.has(id);
+    el.classList.toggle('hidden', hiddenBySearch || hiddenByCompleted);
+    el.classList.toggle('search-hit', search !== null && search.hits.has(id));
   }
+}
+
+/** 已完成节点及其整棵子树的 id（隐藏已完成时整块收起，符合 Workflowy 语义）。 */
+function collectCompletedSubtrees(blocks: readonly Block[]): Set<string> {
+  const hidden = new Set<string>();
+  const markSubtree = (node: OutlineNode): void => {
+    hidden.add(node.id);
+    for (const child of node.children) markSubtree(child);
+  };
+  const walk = (node: OutlineNode): void => {
+    if (node.checked === true) markSubtree(node);
+    else for (const child of node.children) walk(child);
+  };
+  for (const block of blocks) {
+    if (block.kind !== 'list') continue;
+    for (const root of block.roots) walk(root);
+  }
+  return hidden;
 }
 
 function matchTree(

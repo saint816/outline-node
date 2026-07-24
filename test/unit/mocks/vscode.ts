@@ -138,6 +138,19 @@ export const workspace = {
       },
     };
   },
+  getWorkspaceFolder(_uri: Uri): { uri: Uri } | undefined {
+    return undefined;
+  },
+};
+
+export const env = {
+  language: 'en',
+};
+
+export const l10n = {
+  t(message: string): string {
+    return message;
+  },
 };
 
 export const window = {

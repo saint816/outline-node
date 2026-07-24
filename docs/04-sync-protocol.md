@@ -29,11 +29,13 @@ export type W2H =
   | { type: 'edit'; baseVersion: number; seq: number; ops: Op[] }
   | { type: 'requestUndo' }
   | { type: 'requestRedo' }
-  | { type: 'saveFolding'; foldedKeys: string[] };               // 折叠变化时节流上报（见 06）
+  | { type: 'saveFolding'; foldedKeys: string[] }                // 折叠变化时节流上报（见 06）
+  | { type: 'saveBookmarks'; bookmarkKeys: string[] };           // 星标变化时节流上报（nodeKey；UI-state，仿 saveFolding）
 
 // ---------- host → webview ----------
 export type H2W =
-  | { type: 'init';    snapshot: DocSnapshot; version: number; foldedKeys: string[]; config: EditorConfig }
+  // bookmarkKeys 可选：旧 host 不带时 webview 按空处理。locale 不走协议——host 注入 <html lang>。
+  | { type: 'init';    snapshot: DocSnapshot; version: number; foldedKeys: string[]; bookmarkKeys?: string[]; config: EditorConfig }
   | { type: 'ack';     seq: number; version: number }            // 回声确认；webview 只推进 baseVersion
   | { type: 'refresh'; snapshot: DocSnapshot; version: number; cause: 'external' | 'undo' | 'conflict' };
 

@@ -2,7 +2,7 @@
   "name": "outline-node",
   "displayName": "OutlineNode — Workflowy-style Outliner",
   "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "MIT",
   "publisher": "outlinenode",
   "icon": "media/icon.png",
@@ -36,6 +36,7 @@
     "notes"
   ],
   "main": "./dist/extension.js",
+  "l10n": "./l10n",
   "scripts": {
     "build": "node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
@@ -86,7 +87,7 @@
             "tab"
           ],
           "default": "2-space",
-          "description": "新文件或无法从内容检测缩进时使用的缩进单位"
+          "description": "%config.defaultIndent.description%"
         },
         "outlineNode.rememberFolding": {
           "type": "boolean",

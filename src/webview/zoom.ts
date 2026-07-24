@@ -1,6 +1,7 @@
 // zoom 面包屑（规格见 docs/05）。zoom 状态本身存在 store，这里只负责路径条的 DOM。
 
 import type { OutlineNode } from '../core/model.js';
+import { t } from './i18n.js';
 
 export class Breadcrumb {
   readonly el: HTMLElement;
@@ -8,7 +9,7 @@ export class Breadcrumb {
   constructor(private readonly onNavigate: (id: string | null) => void) {
     this.el = document.createElement('nav');
     this.el.className = 'breadcrumb';
-    this.el.setAttribute('aria-label', 'zoom 路径');
+    this.el.setAttribute('aria-label', t('breadcrumb.ariaLabel'));
     this.el.hidden = true;
   }
 
@@ -21,12 +22,12 @@ export class Breadcrumb {
     }
 
     this.el.hidden = false;
-    const parts: HTMLElement[] = [this.crumb('全部', null)];
+    const parts: HTMLElement[] = [this.crumb(t('breadcrumb.home'), null)];
     // 最后一级是当前 zoom 根，不可点
     for (let i = 0; i < trail.length; i++) {
       parts.push(separator());
       const node = trail[i];
-      const label = node.text.trim() === '' ? '(空节点)' : node.text;
+      const label = node.text.trim() === '' ? t('node.empty') : node.text;
       parts.push(i === trail.length - 1 ? current(label) : this.crumb(label, node.id));
     }
     this.el.replaceChildren(...parts);

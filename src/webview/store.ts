@@ -36,6 +36,10 @@ export class Store {
   private zoomRootId: string | null = null;
   private foldingTimer: number | null = null;
   private searchQuery = '';
+  private hideCompletedState = false;
+  /** 星标书签，存 nodeKey（跨 session 稳定，见 docs/06）；绝不写进用户文件。 */
+  private readonly bookmarks = new Set<string>();
+  private bookmarksTimer: number | null = null;
   /** 参与镜像（被 ![[#^id]] 引用的子树）的数据 id，随文档变化重算。 */
   private mirroredIds: Set<string> | null = null;
 
@@ -234,6 +238,90 @@ export class Store {
     this.emit();
   }
 
+  // ---------- 隐藏已完成 ----------
+
+  get hideCompleted(): boolean {
+    return this.hideCompletedState;
+  }
+
+  setHideCompleted(value: boolean): void {
+    if (this.hideCompletedState === value) return;
+    this.hideCompletedState = value;
+    this.emit();
+  }
+
+  toggleHideCompleted(): void {
+    this.setHideCompleted(!this.hideCompletedState);
+  }
+
+  // ---------- 侧栏：顶层节点 + 星标书签 ----------
+
+  /** 当前文档所有 ListBlock 的根节点（侧栏顶层导航用）。 */
+  topLevelNodes(): OutlineNode[] {
+    const out: OutlineNode[] = [];
+    for (const block of this.current.blocks) {
+      if (block.kind === 'list') out.push(...block.roots);
+    }
+    return out;
+  }
+
+  isStarred(rawId: string): boolean {
+    const key = this.keyForId(rawId);
+    return key !== null && this.bookmarks.has(key);
+  }
+
+  toggleStar(rawId: string): void {
+    const key = this.keyForId(rawId);
+    if (key === null) return;
+    if (this.bookmarks.has(key)) this.bookmarks.delete(key);
+    else this.bookmarks.add(key);
+    this.scheduleSaveBookmarks();
+    this.emit();
+  }
+
+  /**
+   * 当前文档内被星标的节点（文档先序）与其 id 集合，一次遍历得出。
+   * 书签空时提前返回——大文件渲染热路径上不额外遍历（护住 refresh 红线）。
+   */
+  starred(): { nodes: OutlineNode[]; ids: Set<string> } {
+    const ids = new Set<string>();
+    const nodes: OutlineNode[] = [];
+    if (this.bookmarks.size === 0) return { nodes, ids };
+    for (const [id, key] of nodeKeys(this.current.blocks)) {
+      if (this.bookmarks.has(key)) ids.add(id);
+    }
+    const walk = (list: readonly OutlineNode[]): void => {
+      for (const node of list) {
+        if (ids.has(node.id)) nodes.push(node);
+        walk(node.children);
+      }
+    };
+    for (const block of this.current.blocks) if (block.kind === 'list') walk(block.roots);
+    return { nodes, ids };
+  }
+
+  private scheduleSaveBookmarks(): void {
+    if (this.bookmarksTimer !== null) return;
+    this.bookmarksTimer = setTimeout(() => {
+      this.bookmarksTimer = null;
+      this.flushBookmarks();
+    }, SAVE_FOLDING_THROTTLE_MS) as unknown as number;
+  }
+
+  /** 立即上报星标（blur / 隐藏页面时调用）。书签用 nodeKey，reset 后无需重算。 */
+  flushBookmarks(): void {
+    if (this.bookmarksTimer !== null) {
+      clearTimeout(this.bookmarksTimer);
+      this.bookmarksTimer = null;
+    }
+    this.send({ type: 'saveBookmarks', bookmarkKeys: [...this.bookmarks] });
+  }
+
+  private restoreBookmarks(keys: string[]): void {
+    this.bookmarks.clear();
+    for (const key of keys) this.bookmarks.add(key);
+  }
+
   /** 节点在树中的位置（父 id + 在兄弟中的序号）。 */
   locationOf(id: string): { parentId: string | null; index: number } | null {
     const found = locate(this.current, originalIdOf(id));
@@ -256,7 +344,10 @@ export class Store {
 
   applyInit(msg: Extract<H2W, { type: 'init' }>): void {
     this.config = msg.config;
-    this.reset(msg.snapshot, msg.version, () => this.restoreFolding(msg.foldedKeys));
+    this.reset(msg.snapshot, msg.version, () => {
+      this.restoreFolding(msg.foldedKeys);
+      this.restoreBookmarks(msg.bookmarkKeys ?? []);
+    });
   }
 
   applyRefresh(msg: Extract<H2W, { type: 'refresh' }>): void {

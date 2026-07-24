@@ -5,13 +5,18 @@ import { asH2W, type H2W, type W2H } from '../shared/protocol.js';
 import { activeEditable, restoreCaret, saveCaret, type CaretPos } from './caret.js';
 import { ime, installImeGuard } from './ime.js';
 import { handleKeydown } from './keymap.js';
+import { t } from './i18n.js';
 import { installClipboard } from './clipboard.js';
 import { installDragAndDrop } from './dnd.js';
 import { expandMirrors, generateBlockId, mirrorLink, originalIdOf } from './mirror.js';
 import { Renderer } from './renderer.js';
-import { SearchBox, applySearchFilter } from './search.js';
+import { SearchBox, applyFilters } from './search.js';
 import { Store } from './store.js';
 import { Breadcrumb } from './zoom.js';
+import { SidebarView } from './sidebar.js';
+import { Toolbar } from './toolbar.js';
+import { HelpOverlay } from './help.js';
+import { ZoomHistory } from './zoomHistory.js';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
@@ -23,6 +28,8 @@ interface ViewState {
   /** 存 nodeKey 而非 id：id 不跨 session（见 docs/05 热恢复）。 */
   zoomRootKey: string | null;
   scrollTop: number;
+  hideCompleted: boolean;
+  sidebarCollapsed: boolean;
 }
 
 const vscode = acquireVsCodeApi();
@@ -31,12 +38,46 @@ const root = document.getElementById('outline-root') as HTMLElement;
 const send = (msg: W2H): void => vscode.postMessage(msg);
 const store = new Store(send);
 const renderer = new Renderer(root);
-const breadcrumb = new Breadcrumb((id) => {
-  store.zoomTo(id);
-});
+
+// zoom 前进/后退历史：所有「记录型」导航都走 navigate()，back/forward 只重放。
+const zoomHistory = new ZoomHistory((id) => store.zoomTo(id));
+function navigate(id: string | null): void {
+  zoomHistory.go(id);
+}
+
+let sidebarCollapsed = false;
+
+const breadcrumb = new Breadcrumb((id) => navigate(id));
 const search = new SearchBox((query) => store.setSearchQuery(query));
-root.parentElement?.insertBefore(search.el, root);
-root.parentElement?.insertBefore(breadcrumb.el, root);
+const help = new HelpOverlay();
+const sidebar = new SidebarView({
+  onNavigate: (id) => navigate(id),
+  onToggleStar: (id) => store.toggleStar(id),
+  onToggleCollapse: () => {
+    sidebarCollapsed = !sidebarCollapsed;
+    saveViewState();
+    render();
+  },
+});
+const toolbar = new Toolbar(
+  {
+    onBack: () => zoomHistory.back(),
+    onForward: () => zoomHistory.forward(),
+    onToggleHideCompleted: () => store.toggleHideCompleted(),
+    onHelp: () => help.toggle(),
+  },
+  search.el,
+);
+
+// 布局：.app( sidebar | .main-col( topbar, breadcrumb, #outline-root ) )。
+// renderer 只操作 #outline-root 的子节点，把 root 挪进新父容器不影响渲染（见 docs/07）。
+const app = document.createElement('div');
+app.className = 'app';
+const mainCol = document.createElement('div');
+mainCol.className = 'main-col';
+mainCol.append(toolbar.el, breadcrumb.el, root);
+app.append(sidebar.el, mainCol);
+document.body.append(app);
 
 let nextCaret: CaretPos | null = null;
 let ready = false;
@@ -57,8 +98,11 @@ function render(): void {
       zoomRootId: store.zoomRoot,
     },
   );
-  applySearchFilter(root, blocks, store.query);
+  applyFilters(root, blocks, store.query, store.hideCompleted);
   breadcrumb.update(store.zoomTrail());
+  // 侧栏/工具条是「外壳」，不在大纲增量 patch 的关键路径上：挪到 macrotask 里合并更新，
+  // 大文件外部 refresh 的 patch 时延只由 renderer.patch 决定（护住 50ms 红线，见 docs/07）。
+  scheduleChrome();
   syncPlaceholder();
   if (caret) restoreCaret(caret);
   saveViewState();
@@ -67,6 +111,34 @@ function render(): void {
 }
 
 store.onChange(render);
+
+let chromePending = false;
+
+/** 合并多次触发：一个 macrotask 内只更新一次侧栏 + 工具条。 */
+function scheduleChrome(): void {
+  if (chromePending) return;
+  chromePending = true;
+  setTimeout(() => {
+    chromePending = false;
+    updateChrome();
+  }, 0);
+}
+
+function updateChrome(): void {
+  const { nodes: starredNodes, ids: starredIds } = store.starred();
+  sidebar.update({
+    topLevel: store.topLevelNodes(),
+    starred: starredNodes,
+    currentZoomId: store.zoomRoot,
+    isStarred: (id) => starredIds.has(id),
+    collapsed: sidebarCollapsed,
+  });
+  toolbar.update({
+    canBack: zoomHistory.canBack(),
+    canForward: zoomHistory.canForward(),
+    hideCompleted: store.hideCompleted,
+  });
+}
 
 /** 空文档（还没有任何列表）时给一个可点击的落点，否则新文件是一片死白。 */
 function syncPlaceholder(): void {
@@ -80,7 +152,7 @@ function syncPlaceholder(): void {
   placeholder = document.createElement('div');
   placeholder.id = 'outline-placeholder';
   placeholder.className = 'placeholder';
-  placeholder.textContent = '点击创建第一个节点';
+  placeholder.textContent = t('placeholder.firstNode');
   placeholder.addEventListener('click', createFirstNode);
   root.append(placeholder);
 }
@@ -184,8 +256,30 @@ root.addEventListener('keydown', (event) => {
     newId: () => nanoid(),
     focusSearch: () => search.focus(),
     clearSearch: () => search.clear(),
+    navigate: (id) => navigate(id),
+    toggleHideCompleted: () => store.toggleHideCompleted(),
   });
 });
+
+// 帮助浮层：? 开关（焦点不在可编辑元素里时，避免吞掉输入的「?」），Esc 关闭。
+// 挂在 document 上，这样焦点在侧栏/工具条时也能触发。
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && help.isOpen()) {
+    help.close();
+    return;
+  }
+  if (event.key === '?' && !isEditableTarget(event.target)) {
+    event.preventDefault();
+    help.toggle();
+  }
+});
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA';
+}
 
 // 点击交互（事件委托，不给每节点绑监听器，见 docs/07）
 root.addEventListener('click', (event) => {
@@ -198,7 +292,7 @@ root.addEventListener('click', (event) => {
     store.toggleFold(id);
   } else if (target.closest('.bullet')) {
     event.preventDefault();
-    store.zoomTo(id);
+    navigate(id);
   }
 });
 
@@ -223,7 +317,7 @@ function openContextMenu(x: number, y: number, nodeId: string): void {
   const item = document.createElement('button');
   item.type = 'button';
   item.className = 'context-menu-item';
-  item.textContent = '复制为镜像链接';
+  item.textContent = t('contextMenu.copyMirror');
   item.addEventListener('click', () => {
     copyAsMirrorLink(nodeId);
     closeContextMenu();
@@ -285,6 +379,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     store.flushPending();
     store.flushFolding();
+    store.flushBookmarks();
   }
 });
 
@@ -312,6 +407,8 @@ function saveViewState(): void {
   const state: ViewState = {
     zoomRootKey: zoomRoot === null ? null : store.keyForId(zoomRoot),
     scrollTop: window.scrollY,
+    hideCompleted: store.hideCompleted,
+    sidebarCollapsed,
   };
   vscode.setState(state);
 }
@@ -319,9 +416,11 @@ function saveViewState(): void {
 function restoreViewState(): void {
   const state = vscode.getState() as ViewState | undefined;
   if (!state) return;
+  if (typeof state.hideCompleted === 'boolean') store.setHideCompleted(state.hideCompleted);
+  if (typeof state.sidebarCollapsed === 'boolean') sidebarCollapsed = state.sidebarCollapsed;
   if (typeof state.zoomRootKey === 'string') {
     const id = store.idForKey(state.zoomRootKey);
-    if (id) store.zoomTo(id);
+    if (id) navigate(id);
   }
   if (typeof state.scrollTop === 'number') window.scrollTo({ top: state.scrollTop });
 }

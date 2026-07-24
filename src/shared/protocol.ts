@@ -55,7 +55,8 @@ export type W2H =
   | { type: 'edit'; baseVersion: number; seq: number; ops: Op[] }
   | { type: 'requestUndo' }
   | { type: 'requestRedo' }
-  | { type: 'saveFolding'; foldedKeys: string[] };
+  | { type: 'saveFolding'; foldedKeys: string[] }
+  | { type: 'saveBookmarks'; bookmarkKeys: string[] };
 
 // ---------- host → webview ----------
 
@@ -65,6 +66,8 @@ export type H2W =
       snapshot: DocSnapshot;
       version: number;
       foldedKeys: string[];
+      /** 星标书签（nodeKey）；旧 host 可能不带，webview 端按空处理。 */
+      bookmarkKeys?: string[];
       config: EditorConfig;
     }
   | { type: 'ack'; seq: number; version: number }
@@ -94,6 +97,10 @@ export function asW2H(raw: unknown): W2H | null {
     case 'saveFolding':
       return Array.isArray(raw.foldedKeys) && raw.foldedKeys.every((k) => typeof k === 'string')
         ? { type: 'saveFolding', foldedKeys: raw.foldedKeys as string[] }
+        : null;
+    case 'saveBookmarks':
+      return Array.isArray(raw.bookmarkKeys) && raw.bookmarkKeys.every((k) => typeof k === 'string')
+        ? { type: 'saveBookmarks', bookmarkKeys: raw.bookmarkKeys as string[] }
         : null;
     default:
       return null;

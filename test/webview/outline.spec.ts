@@ -167,10 +167,10 @@ test('zoom：只渲染子树，面包屑可回退', async ({ page }) => {
   await page.locator('.node[data-id="a1"] > .node-row > .bullet').click();
   expect(await textsInDom(page)).toEqual(['A1', 'A2']);
   await expect(page.locator('.node[data-id="b"]')).toHaveCount(0);
-  await expect(page.locator('.breadcrumb .crumb')).toHaveText(['全部', 'A', 'A1']);
+  await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'A', 'A1']);
 
-  // 面包屑跳回 A
-  await page.getByRole('button', { name: 'A', exact: true }).click();
+  // 面包屑跳回 A（限定在面包屑内：侧栏也有同名 'A' 按钮）
+  await page.locator('.breadcrumb').getByRole('button', { name: 'A', exact: true }).click();
   expect(await textsInDom(page)).toEqual(['A', 'A1', 'A2']);
 
   // Alt+← 再退到全文档

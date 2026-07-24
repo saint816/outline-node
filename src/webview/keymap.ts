@@ -23,6 +23,9 @@ export interface KeymapContext {
   newId(): string;
   focusSearch(): void;
   clearSearch(): void;
+  /** zoom 导航（走前进/后退历史），null = 回到全部。 */
+  navigate(id: string | null): void;
+  toggleHideCompleted(): void;
 }
 
 export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
@@ -46,6 +49,13 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
   }
   if (e.key === 'Escape') {
     ctx.clearSearch();
+    return;
+  }
+
+  // 隐藏 / 显示已完成（Workflowy ⌘O）
+  if (mod && (e.key === 'o' || e.key === 'O')) {
+    e.preventDefault();
+    ctx.toggleHideCompleted();
     return;
   }
 
@@ -88,7 +98,7 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
         return;
       case 'ArrowRight':
         e.preventDefault();
-        ctx.store.zoomTo(caret.nodeId);
+        ctx.navigate(caret.nodeId);
         ctx.setNextCaret(caret);
         return;
       case 'ArrowLeft':
@@ -227,7 +237,7 @@ function onVerticalMove(e: KeyboardEvent, caret: CaretPos, ctx: KeymapContext): 
 function zoomOut(ctx: KeymapContext): void {
   const trail = ctx.store.zoomTrail();
   const parent = trail.length >= 2 ? trail[trail.length - 2] : null;
-  ctx.store.zoomTo(parent ? parent.id : null);
+  ctx.navigate(parent ? parent.id : null);
 }
 
 function isCollapsed(): boolean {

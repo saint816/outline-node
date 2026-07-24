@@ -17,11 +17,11 @@ test('折叠按钮有 aria-expanded 与中文标签', async ({ page }) => {
   await openOutline(page, [node('a', 'A', [node('a1', 'A1')])]);
   const toggle = page.locator('.node[data-id="a"] > .node-row > .toggle');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(toggle).toHaveAttribute('aria-label', '折叠');
+  await expect(toggle).toHaveAttribute('aria-label', 'Collapse');
 
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(toggle).toHaveAttribute('aria-label', '展开');
+  await expect(toggle).toHaveAttribute('aria-label', 'Expand');
 });
 
 test('正文与备注是单行/多行 textbox', async ({ page }) => {
@@ -43,5 +43,5 @@ test('聚焦的节点有可见的 focus 环', async ({ page }) => {
 
 test('搜索框有 aria-label', async ({ page }) => {
   await openOutline(page, [node('a', 'A')]);
-  await expect(page.locator('.search-input')).toHaveAttribute('aria-label', '搜索节点');
+  await expect(page.locator('.search-input')).toHaveAttribute('aria-label', 'Search nodes');
 });

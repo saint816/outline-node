@@ -9,6 +9,7 @@ import { serializeOutline } from '../core/serializer.js';
 import { matchTrees } from '../core/treeMatch.js';
 import { toSnapshot, type DocSnapshot, type EditorConfig, type H2W, type W2H } from '../shared/protocol.js';
 import type { FoldingStore, UriLike } from './foldingStore.js';
+import type { BookmarkStore } from './bookmarkStore.js';
 
 /**
  * session 用到的宿主能力。
@@ -37,12 +38,14 @@ export class DocumentSession {
   private externalTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingUndo = false;
   private foldedKeys: string[] | null = null;
+  private bookmarkKeys: string[] | null = null;
   private disposed = false;
 
   constructor(
     private readonly host: SessionHost,
     private readonly folding: FoldingStore,
     private readonly config: EditorConfig,
+    private readonly bookmarks?: BookmarkStore,
   ) {
     this.mirrorDoc = this.parse(host.getText());
   }
@@ -61,6 +64,7 @@ export class DocumentSession {
           snapshot: toSnapshot(this.mirrorDoc),
           version: this.host.version,
           foldedKeys: this.config.rememberFolding ? this.folding.load(this.host.uri) : [],
+          bookmarkKeys: this.bookmarks ? this.bookmarks.load(this.host.uri) : [],
           config: this.config,
         });
         return;
@@ -76,6 +80,10 @@ export class DocumentSession {
       case 'saveFolding':
         this.foldedKeys = msg.foldedKeys;
         if (this.config.rememberFolding) this.folding.save(this.host.uri, msg.foldedKeys);
+        return;
+      case 'saveBookmarks':
+        this.bookmarkKeys = msg.bookmarkKeys;
+        this.bookmarks?.save(this.host.uri, msg.bookmarkKeys);
         return;
     }
   }
@@ -104,6 +112,9 @@ export class DocumentSession {
     this.externalTimer = null;
     if (this.config.rememberFolding && this.foldedKeys !== null) {
       this.folding.save(this.host.uri, this.foldedKeys);
+    }
+    if (this.bookmarks && this.bookmarkKeys !== null) {
+      this.bookmarks.save(this.host.uri, this.bookmarkKeys);
     }
   }
 

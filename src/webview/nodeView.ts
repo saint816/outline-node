@@ -2,6 +2,8 @@
 // 只负责「一个节点 → 一段 DOM」，不感知树的增删改顺序（那是 renderer 的事）。
 
 import type { OutlineNode } from '../core/model.js';
+import { t } from './i18n.js';
+import { parseImages, wholeLineImage, type ParsedImage } from './images.js';
 import type { MirrorState } from './mirror.js';
 
 export interface UpdateOptions {
@@ -25,6 +27,8 @@ export class NodeView {
   private badgeEl: HTMLElement | null = null;
   private noteEl: HTMLElement | null = null;
   private hintEl: HTMLElement | null = null;
+  private imagesEl: HTMLElement | null = null;
+  private imagesKey = '';
 
   constructor(
     node: OutlineNode,
@@ -70,7 +74,7 @@ export class NodeView {
     this.el.setAttribute('aria-level', String(opts.depth + 1));
     this.el.setAttribute('aria-selected', 'false');
     this.toggleEl.setAttribute('aria-expanded', opts.folded ? 'false' : 'true');
-    this.toggleEl.setAttribute('aria-label', opts.folded ? '展开' : '折叠');
+    this.toggleEl.setAttribute('aria-label', opts.folded ? t('toggle.expand') : t('toggle.collapse'));
     this.el.classList.toggle('folded', opts.folded);
 
     if (!opts.skipText && this.textEl.textContent !== node.text) {
@@ -87,6 +91,29 @@ export class NodeView {
 
     this.syncBadge(node);
     this.syncNote(node, opts);
+    this.syncImages(node);
+  }
+
+  /**
+   * 节点正文里的图片渲染成预览（源码 `![[x]]` / `![](x)` 仍留在可编辑正文里，可继续编辑）。
+   * 纯渲染，不改数据。镜像行不参与。图片集合未变时跳过重建，避免重复加载闪烁。
+   */
+  private syncImages(node: OutlineNode): void {
+    const images: ParsedImage[] = node.mirror !== null ? [] : parseImages(node.text);
+    const key = images.map((i) => i.src).join('\n');
+    if (key === this.imagesKey && (images.length === 0) === (this.imagesEl === null)) return;
+    this.imagesKey = key;
+
+    if (images.length === 0) {
+      this.imagesEl?.remove();
+      this.imagesEl = null;
+      return;
+    }
+    if (this.imagesEl === null) {
+      this.imagesEl = div('node-images');
+      this.el.insertBefore(this.imagesEl, this.childrenEl);
+    }
+    this.imagesEl.replaceChildren(...images.map((im) => imageEl(im)));
   }
 
   /**
@@ -102,7 +129,7 @@ export class NodeView {
     const readOnly = state === 'broken' || state === 'cycle';
     this.textEl.contentEditable = readOnly ? 'false' : 'plaintext-only';
 
-    const hint = readOnly ? (state === 'broken' ? '断链引用' : '循环引用') : null;
+    const hint = readOnly ? (state === 'broken' ? t('mirror.broken') : t('mirror.cycle')) : null;
     if (hint === null) {
       this.hintEl?.remove();
       this.hintEl = null;
@@ -117,7 +144,7 @@ export class NodeView {
 
     this.el.classList.toggle('has-ignored-children', opts.ignoredChildren === true);
     if (opts.ignoredChildren === true) {
-      this.row.title = '镜像行下的子行不参与渲染（数据保留在文件里）';
+      this.row.title = t('mirror.ignoredChildren');
     } else if (this.row.title !== '') {
       this.row.removeAttribute('title');
     }
@@ -160,17 +187,43 @@ export class NodeView {
 }
 
 export function createRawBlockView(lines: string[]): HTMLElement {
-  const pre = document.createElement('pre');
-  pre.className = 'raw-block';
-  updateRawBlockView(pre, lines);
-  return pre;
+  const el = document.createElement('div');
+  el.className = 'raw-block';
+  updateRawBlockView(el, lines);
+  return el;
 }
 
-export function updateRawBlockView(pre: HTMLElement, lines: string[]): void {
+export function updateRawBlockView(el: HTMLElement, lines: string[]): void {
+  // 独立成行的图片：渲染成 <img>（只读，原文仍在文件里）
+  const image = lines.length === 1 ? wholeLineImage(lines[0]) : null;
+  if (image) {
+    el.classList.add('image-block');
+    el.classList.remove('blank');
+    const existing = el.querySelector('img');
+    if (existing) {
+      if (existing.getAttribute('src') !== image.src) existing.src = image.src;
+      existing.alt = image.alt;
+    } else {
+      el.replaceChildren(imageEl(image));
+    }
+    return;
+  }
+
+  el.classList.remove('image-block');
   const text = lines.join('\n');
-  if (pre.textContent !== text) pre.textContent = text;
+  // 有元素子节点（上一轮的 <img>）时强制重置，避免残留
+  if (el.firstElementChild || el.textContent !== text) el.textContent = text;
   // 仅含空行的 RawBlock 渲染成细分隔，让被空行拆开的列表在视觉上连续（纯样式，不改模型）
-  pre.classList.toggle('blank', lines.every((line) => line.trim() === ''));
+  el.classList.toggle('blank', lines.every((line) => line.trim() === ''));
+}
+
+function imageEl(image: ParsedImage): HTMLImageElement {
+  const img = document.createElement('img');
+  img.className = 'node-image';
+  img.src = image.src;
+  img.alt = image.alt;
+  img.loading = 'lazy';
+  return img;
 }
 
 function div(className: string): HTMLElement {

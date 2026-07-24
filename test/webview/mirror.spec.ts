@@ -76,7 +76,7 @@ test('断链：只读渲染 + 提示，原文不丢', async ({ page }) => {
 
   const row = page.locator('.node[data-id="m"]');
   await expect(row).toHaveClass(/mirror-broken/);
-  await expect(row.locator('.mirror-hint')).toHaveText('断链引用');
+  await expect(row.locator('.mirror-hint')).toHaveText('Broken reference');
   await expect(row.locator('[data-field="text"]')).toHaveText('![[#^missing]]');
   await expect(row.locator('[data-field="text"]')).toHaveAttribute('contenteditable', 'false');
 });
@@ -85,7 +85,7 @@ test('循环引用：占位符，不无限展开', async ({ page }) => {
   await openOutline(page, [source('s', '自引用', 'k1', [mirrorRow('m', 'k1')] as never)]);
 
   await expect(page.locator('.node[data-id="m"]')).toHaveClass(/mirror-cycle/);
-  await expect(page.locator('.node[data-id="m"] .mirror-hint')).toHaveText('循环引用');
+  await expect(page.locator('.node[data-id="m"] .mirror-hint')).toHaveText('Circular reference');
   expect(await page.locator('.node').count()).toBe(2);
 });
 
@@ -107,7 +107,7 @@ test('右键「复制为镜像链接」：无 blockId 时先 assignBlockId', asy
   await clearPosted(page);
 
   await page.locator('.node[data-id="a"] > .node-row > .text').click({ button: 'right' });
-  await expect(page.locator('.context-menu-item')).toHaveText('复制为镜像链接');
+  await expect(page.locator('.context-menu-item')).toHaveText('Copy as mirror link');
   await page.locator('.context-menu-item').click();
 
   const edit = await waitForEdit(page);

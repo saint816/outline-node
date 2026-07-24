@@ -7,3 +7,7 @@
 !README.md
 !CHANGELOG.md
 !LICENSE
+# i18n：package.nls*.json 与 l10n bundle 必须进包，否则中文环境回退英文（见 docs/04）
+!package.nls.json
+!package.nls.*.json
+!l10n/**

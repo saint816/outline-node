@@ -3,6 +3,7 @@ import type { TextEditSpan } from '../core/lineDiff.js';
 import { asW2H, type EditorConfig, type H2W } from '../shared/protocol.js';
 import { DocumentSession, type SessionHost } from './documentSession.js';
 import type { FoldingStore } from './foldingStore.js';
+import type { BookmarkStore } from './bookmarkStore.js';
 
 /**
  * CustomTextEditorProvider：webview 创建、HTML/CSP、session 生命周期。
@@ -16,6 +17,7 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     private readonly context: vscode.ExtensionContext,
     private readonly folding: FoldingStore,
     private readonly readConfig: () => EditorConfig,
+    private readonly bookmarks?: BookmarkStore,
   ) {}
 
   resolveCustomTextEditor(
@@ -24,16 +26,25 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     _token: vscode.CancellationToken,
   ): void {
     const webview = webviewPanel.webview;
+    // 图片渲染（见 docs/05）：webview 只能加载 localResourceRoots 白名单里的本地文件。
+    // 允许扩展 dist、文档所在目录、以及所属工作区，让 `![[x]]` / `![](x)` 能引用到图片。
+    const resourceRoots = [
+      vscode.Uri.joinPath(this.context.extensionUri, 'dist'),
+      vscode.Uri.joinPath(document.uri, '..'),
+    ];
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+    if (workspaceFolder) resourceRoots.push(workspaceFolder.uri);
     webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist')],
+      localResourceRoots: resourceRoots,
     };
-    webview.html = this.buildHtml(webview);
+    webview.html = this.buildHtml(webview, document);
 
     const session = new DocumentSession(
       createSessionHost(document, webview),
       this.folding,
       this.readConfig(),
+      this.bookmarks,
     );
     this.sessions.set(document.uri.toString(), session);
 
@@ -58,7 +69,7 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     });
   }
 
-  private buildHtml(webview: vscode.Webview): string {
+  private buildHtml(webview: vscode.Webview, document: vscode.TextDocument): string {
     const nonce = makeNonce();
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview.js'),
@@ -66,15 +77,20 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview.css'),
     );
+    // i18n：把 VS Code 显示语言注入 <html lang>，webview 的 i18n 据此选目录（无需协议往返）。
+    const lang = vscode.env.language || 'en';
+    // 图片：文档所在目录的 webview URI，供 webview 把相对路径改写成可加载的 vscode-webview:// 地址。
+    const docBase = webview.asWebviewUri(vscode.Uri.joinPath(document.uri, '..')).toString();
     const csp = [
       `default-src 'none'`,
+      `img-src ${webview.cspSource} https: data:`,
       `style-src ${webview.cspSource}`,
       `script-src 'nonce-${nonce}'`,
       `font-src ${webview.cspSource}`,
     ].join('; ');
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}" data-doc-base="${docBase}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
