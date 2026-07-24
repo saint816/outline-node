@@ -16,6 +16,7 @@ import { Breadcrumb } from './zoom.js';
 import { SidebarView } from './sidebar.js';
 import { Toolbar } from './toolbar.js';
 import { HelpOverlay } from './help.js';
+import { SlashMenu } from './slashMenu.js';
 import { ZoomHistory } from './zoomHistory.js';
 
 declare function acquireVsCodeApi(): {
@@ -85,6 +86,18 @@ let nextCaret: CaretPos | null = null;
 let nextCodeFocus: string | null = null;
 let ready = false;
 const EMPTY_FOLDS: ReadonlySet<string> = new Set<string>();
+
+// 斜杠插入菜单（/ → Code/To-do/编号）。keydown 前置拦导航键、input 后重算 token。
+const slashMenu = new SlashMenu({
+  store,
+  newId: () => nanoid(),
+  setNextCaret: (pos) => {
+    nextCaret = pos;
+  },
+  focusCodeBlock: (blockId) => {
+    nextCodeFocus = blockId;
+  },
+});
 
 // ---------- 渲染 ----------
 
@@ -248,6 +261,7 @@ root.addEventListener('input', (event) => {
     return;
   }
   commitFieldText(target);
+  slashMenu.sync(); // 文本已提交，重算 / token（sync 内部对非 text 字段自动关闭）
 });
 
 function commitFieldText(target: HTMLElement): void {
@@ -285,6 +299,8 @@ root.addEventListener('beforeinput', (event) => {
 });
 
 root.addEventListener('keydown', (event) => {
+  // 斜杠菜单激活时优先吃掉导航键（↑↓/Enter/Tab/Esc），keymap 不再处理
+  if (event.key !== 'Process' && !event.isComposing && slashMenu.handleKeydown(event)) return;
   handleKeydown(event, {
     store,
     setNextCaret: (pos) => {
@@ -418,6 +434,7 @@ async function writeClipboard(text: string): Promise<void> {
 // 失焦 / 页面隐藏时立即 flush，缩小丢失窗口
 root.addEventListener('focusout', (event) => {
   store.flushPending();
+  slashMenu.close(); // 焦点离开正文 → 关菜单（点菜单本身走 mousedown+preventDefault，不触发失焦）
   // 空 note 失焦 → 归一为 null：移除残留空行，并避免 serializer 把 note:'' 写成一行空白（红线 1）。
   // 用 macrotask 推迟到焦点转移完成后再动 DOM，不打断正在进行的 focus 切换（同 scheduleChrome 思路）。
   const el = event.target;

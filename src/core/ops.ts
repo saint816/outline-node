@@ -23,6 +23,7 @@ export type Op =
   | { op: 'moveDown'; id: string }
   | { op: 'move'; id: string; parentId: string | null; index: number }
   | { op: 'toggleChecked'; id: string }
+  | { op: 'setChecked'; id: string; checked: boolean | null }
   | { op: 'toggleOrdered'; id: string }
   | { op: 'insertSubtree'; parentId: string | null; index: number; nodes: OutlineNode[] }
   | { op: 'delete'; id: string }
@@ -68,6 +69,8 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult {
       return move(doc, op.id, op.parentId, op.index);
     case 'toggleChecked':
       return toggleChecked(doc, op.id);
+    case 'setChecked':
+      return setChecked(doc, op.id, op.checked);
     case 'toggleOrdered':
       return toggleOrdered(doc, op.id);
     case 'insertSubtree':
@@ -157,6 +160,16 @@ function toggleChecked(doc: OutlineDoc, id: string): OpResult {
   if (!found) return NO_OP;
   // null → true、false → true、true → false（决策理由见 docs/02）
   found.node.checked = found.node.checked !== true;
+  found.node.raw = null;
+  return CHANGED;
+}
+
+/** 直接设定完成态（斜杠菜单 To-do 用：toggleChecked 表达不了 null→false 的未勾选任务）。 */
+function setChecked(doc: OutlineDoc, id: string, checked: boolean | null): OpResult {
+  const found = locate(doc, id);
+  if (!found) return NO_OP;
+  if (found.node.checked === checked) return NO_OP;
+  found.node.checked = checked;
   found.node.raw = null;
   return CHANGED;
 }

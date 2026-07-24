@@ -477,6 +477,48 @@ body {
   background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
 }
 
+/* ---------- 斜杠插入菜单 ---------- */
+
+.slash-menu {
+  position: fixed;
+  z-index: 15;
+  min-width: 180px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  background: var(--vscode-menu-background, var(--vscode-editor-background));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+
+.slash-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  color: var(--vscode-menu-foreground, var(--vscode-editor-foreground));
+  cursor: pointer;
+}
+
+.slash-item.selected,
+.slash-item:hover {
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+}
+
+.slash-hint {
+  font-size: 0.85em;
+  opacity: 0.6;
+}
+
+.slash-empty {
+  padding: 4px 8px;
+  color: var(--vscode-descriptionForeground, var(--vscode-editor-foreground));
+  opacity: 0.7;
+}
+
 /* ---------- 可达性 ---------- */
 
 .toggle:focus-visible,

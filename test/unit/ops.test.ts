@@ -75,6 +75,18 @@ describe('setText / setNote / toggleChecked', () => {
     applyOp(doc, toggle);
     expect(serializeOutline(doc)).toBe('- [x] a\n');
   });
+
+  it('setChecked：普通节点 → 未勾选任务（null → false，斜杠菜单 To-do 用）', () => {
+    const doc = parse('- a\n');
+    const id = idOf(doc, 'a');
+    expect(applyOp(doc, { op: 'setChecked', id, checked: false }).changed).toBe(true);
+    expect(serializeOutline(doc)).toBe('- [ ] a\n');
+    // 幂等：同值 no-op
+    expect(applyOp(doc, { op: 'setChecked', id, checked: false }).changed).toBe(false);
+    // 可设回 null（去掉 checkbox）
+    expect(applyOp(doc, { op: 'setChecked', id, checked: null }).changed).toBe(true);
+    expect(serializeOutline(doc)).toBe('- a\n');
+  });
 });
 
 describe('split', () => {

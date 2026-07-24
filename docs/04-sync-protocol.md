@@ -74,6 +74,7 @@ export type Op =
   | { op: 'moveDown'; id: string }
   | { op: 'move';     id: string; parentId: string | null; index: number }   // 拖拽 reparent
   | { op: 'toggleChecked'; id: string }
+  | { op: 'setChecked'; id: string; checked: boolean | null }   // 直接设定完成态（斜杠菜单 To-do）
   | { op: 'insertSubtree'; parentId: string | null; index: number; nodes: NodeSnapshot[] }  // 粘贴/新建
   | { op: 'delete';   id: string }
   | { op: 'assignBlockId'; id: string; blockId: string }   // 镜像功能用（见 06），M6 前可不实现
@@ -97,6 +98,7 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult;   // 原地修改 do
 - **moveUp / moveDown**：与前/后一个**兄弟**交换位置（子树整体移动）；边界 → no-op。跨层移动不在此 op 范围（用拖拽或 indent/outdent 组合）。
 - **move**：从当前位置摘除，插入到 `parentId` 的 `children[index]`（`parentId === null` → 所在 ListBlock 的 roots[index]）。约束：`parentId` 不得是本节点或其后代（成环，applyOp 内校验，违反 → no-op）；v1 拖拽限制在同一 ListBlock 内。
 - **toggleChecked**：`null → true`、`false → true`、`true → false`（决策理由见 02）。
+- **setChecked**：直接把 `checked` 设为给定值（`null`/`false`/`true`）；同值 → no-op；`raw = null`。存在的理由：`toggleChecked` 表达不了 `null → false`（未勾选任务），斜杠菜单的 To-do 需要它。
 - **insertSubtree**：把 `nodes`（含 webview 生成的 id）插入指定位置。id 冲突（已存在）→ no-op 整条拒绝。
 - **delete**：删除节点及整棵子树。
 - **assignBlockId**：设置节点的 `blockId`（创建镜像前置步骤，见 06）；文档内已存在同名 blockId → no-op；`raw = null`。

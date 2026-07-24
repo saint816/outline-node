@@ -55,7 +55,14 @@ export type MessageKey =
   | 'help.search'
   | 'help.hideCompleted'
   | 'help.ordered'
-  | 'help.help';
+  | 'help.help'
+  | 'help.slash'
+  | 'slash.ariaLabel'
+  | 'slash.noResults'
+  | 'slash.codeBlock'
+  | 'slash.codeBlockHint'
+  | 'slash.todo'
+  | 'slash.numbered';
 
 const EN: Record<MessageKey, string> = {
   'search.placeholder': 'Search nodes…',
@@ -101,6 +108,13 @@ const EN: Record<MessageKey, string> = {
   'help.hideCompleted': 'Hide / show completed',
   'help.ordered': 'Toggle ordered list',
   'help.help': 'Toggle this help',
+  'help.slash': 'Open the / insert menu',
+  'slash.ariaLabel': 'Insert menu',
+  'slash.noResults': 'No matches',
+  'slash.codeBlock': 'Code block',
+  'slash.codeBlockHint': 'top-level only',
+  'slash.todo': 'To-do',
+  'slash.numbered': 'Numbered list',
 };
 
 const ZH: Record<MessageKey, string> = {
@@ -147,6 +161,13 @@ const ZH: Record<MessageKey, string> = {
   'help.hideCompleted': '隐藏 / 显示已完成',
   'help.ordered': '切换有序列表',
   'help.help': '开关本帮助',
+  'help.slash': '打开 / 插入菜单',
+  'slash.ariaLabel': '插入菜单',
+  'slash.noResults': '无匹配',
+  'slash.codeBlock': '代码块',
+  'slash.codeBlockHint': '仅顶层',
+  'slash.todo': '待办',
+  'slash.numbered': '有序列表',
 };
 
 export function t(key: MessageKey): string {

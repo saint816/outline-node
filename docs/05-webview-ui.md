@@ -82,6 +82,7 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 | `Alt+↑` / `Alt+↓` | `moveUp` / `moveDown` |
 | `Cmd/Ctrl+Enter` | `toggleChecked` |
 | ` ``` ` / ` ```lang ` + `Enter` | 空的顶层根节点 → 顶层代码块（`toCodeBlock`，见 02/04）；非顶层节点上不触发，`Enter` 按普通逻辑走 |
+| `/`（词首） | 打开斜杠插入菜单（见下「斜杠插入菜单」）：Code / To-do / 编号 |
 | `Alt+→` / `Alt+←` | zoom in 当前节点 / zoom out 一级 |
 | `Cmd/Ctrl+.` | 折叠/展开当前节点 |
 | `↑` / `↓`（在首/末行） | 光标移到可见前/后节点（列尽量保持） |
@@ -101,6 +102,18 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 ## 代码块编辑（nodeView.ts + main.ts 委托）
 
 围栏代码块 RawBlock 渲染为语言标签 + 可编辑 `textarea`（`data-field="code"`），元素上带 `data-block-id`（renderer 注入）。textarea `input` 经 main.ts 委托重建整块行（保留 `data-code-open` / `data-code-close` 原始围栏）→ `store.setRawBlockLines` → `setRawBlock` op（热路径不重渲染，同 setNodeText）。正在编辑本块时 `updateRawBlockView` 一票跳过（`el.contains(document.activeElement)`），不打断输入。创建见快捷键表 ` ``` ` 行。
+
+## 斜杠插入菜单（slashMenu.ts）
+
+Workflowy 式 `/` 菜单：在正文（`text` 字段）词首（行首或空白后）输入 `/` 弹出可过滤菜单，`/` 后连续非空白串为 query。↑↓ 选、Enter/Tab 确认、Esc 忽略（同一 token 不再自动弹）、光标移出 token 或失焦即关。菜单由 `input` 委托在 `setNodeText` 之后 `sync()` 重算；`keydown` 在 keymap 之前拦导航键（激活且有匹配时）。
+
+条目复用现有 op、不改数据模型：
+
+- **Code block**：`toCodeBlock`。受纯 Markdown 红线限制**只能顶层空节点**——`enabled` 用 `locationOf().parentId === null` 且无子/备注/镜像过滤；不合格时该条不出现（嵌套节点 `/code` 显示"无匹配"，Enter 放行为普通拆分）。转换时 `/code` 文本随节点整体被替换成代码块 RawBlock，无需单独删。
+- **To-do**：先 `setText` 删掉 `/query`，再 `setChecked{checked:false}`（未勾选任务）。用 `setChecked` 而非 `toggleChecked`，因为后者从 `null` 只能到 `true`（见 04）。
+- **Numbered**：先 `setText` 删掉 `/query`，再 `toggleOrdered`（已是有序则跳过）。
+
+无匹配时只显示占位、不拦截 Enter。所有条目文案走 `t()` 双语（见 i18n.ts `slash.*`）。
 
 ## 拖拽（dnd.ts）
 
