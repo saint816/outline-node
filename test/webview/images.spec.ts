@@ -78,6 +78,19 @@ test('粘贴图片：光标处插入 ![[pasted-…]]，发出带 base64 的 save
     page.locator('.node[data-id="a"] > .node-row > [data-field="text"]'),
   ).toContainText('![[pasted-');
 
+  // 关键回归：嵌入引用必须经 store 发出 edit(setText) 抵达 host —— 老实现用 execCommand
+  // 在 VS Code webview 里静默失败，图写了盘但正文没引用（真机复现过）。
+  await page.waitForFunction(
+    () =>
+      (window as never as { __posted: { type: string; ops?: { op: string; text?: string }[] }[] }).__posted.some(
+        (m) =>
+          m.type === 'edit' &&
+          (m.ops ?? []).some((o) => o.op === 'setText' && /cover!\[\[pasted-.*\.png\]\]/.test(o.text ?? '')),
+      ),
+    undefined,
+    { timeout: 3000 },
+  );
+
   // 发出 saveImage（文件名 + 非空 base64）
   await page.waitForFunction(
     () =>

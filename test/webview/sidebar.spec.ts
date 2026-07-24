@@ -207,3 +207,41 @@ test('侧栏可收起 / 展开', async ({ page }) => {
   await page.locator('.sidebar-collapse').click();
   await expect(page.locator('.sidebar')).not.toHaveClass(/collapsed/);
 });
+
+test('侧栏：编辑顶层节点文本，label 实时跟上（打字热路径不整树重渲染）', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta')]);
+  const sidebar = page.locator('.sidebar');
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', 'Alpha', 'Beta']);
+
+  await focusText(page, 'a', 5); // 光标到 'Alpha' 末尾
+  await page.keyboard.type('X');
+
+  // 打字不发结构 op、不 emit，但侧栏 label 立即变 AlphaX（syncText 热更新）
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', 'AlphaX', 'Beta']);
+});
+
+test('侧栏：编辑展开子树里的节点，label 也实时跟上（不止顶层）', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha', [node('a1', 'Child')])]);
+  const sidebar = page.locator('.sidebar');
+
+  // 侧栏树默认折叠，先展开 a
+  await sidebar.locator('.sidebar-item[data-id="a"] .sidebar-toggle').click();
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', 'Alpha', 'Child']);
+
+  await focusText(page, 'a1', 5); // 'Child' 末尾
+  await page.keyboard.type('!');
+
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', 'Alpha', 'Child!']);
+});
+
+test('侧栏：节点文本清空后 label 回落到 (empty node) 占位', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha')]);
+  const sidebar = page.locator('.sidebar');
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', 'Alpha']);
+
+  await focusText(page, 'a', 0);
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('Delete');
+
+  await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', '(empty node)']);
+});

@@ -233,7 +233,18 @@ function onMerge(caret: CaretPos, ctx: KeymapContext): void {
   const node = ctx.store.findNode(caret.nodeId);
   if (!node || node.children.length > 0) return;
   const previous = ctx.store.previousNode(caret.nodeId);
-  if (!previous) return;
+  if (!previous) {
+    // 首节点无前驱：空节点直接删除、光标落到下一个可见节点（Workflowy 语义）。
+    // 非空节点保持 no-op（合并没有落点，删除会丢正文）；文档仅剩这一个节点时也不删。
+    if (node.text !== '' || node.note !== null) return;
+    const visible = ctx.store.visibleNodes();
+    const at = visible.findIndex((n) => n.id === node.id);
+    const next = at === -1 ? null : visible[at + 1];
+    if (!next) return;
+    ctx.setNextCaret({ nodeId: next.id, field: 'text', offset: 0 });
+    ctx.store.dispatch({ op: 'delete', id: node.id });
+    return;
+  }
 
   // junction = 目标原 text 长度，dispatch 前记录（不进 op，见 docs/04）
   ctx.setNextCaret({ nodeId: previous.id, field: 'text', offset: previous.text.length });

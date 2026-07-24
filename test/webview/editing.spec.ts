@@ -111,6 +111,56 @@ test('有子节点时行首 Backspace 不合并（no-op 不产生消息）', asy
   expect(await textsInDom(page)).toEqual(['foo', 'bar', 'child']);
 });
 
+test('首节点为空时 Backspace 删除该节点，光标落到下一个节点', async ({ page }) => {
+  await openOutline(page, [node('e0', ''), node('n1', '1'), node('n2', '2')]);
+  await clearPosted(page);
+
+  await focusText(page, 'e0', 0);
+  await page.keyboard.press('Backspace');
+
+  const edit = await waitForEdit(page);
+  expect(edit.ops).toEqual([{ op: 'delete', id: 'e0' }]);
+  expect(await textsInDom(page)).toEqual(['1', '2']);
+  expect(await caretState(page)).toEqual({ id: 'n1', offset: 0 });
+});
+
+test('尾节点为空时 Backspace 合并进前一个节点（不残留空行）', async ({ page }) => {
+  await openOutline(page, [node('n1', '1'), node('n2', '2'), node('e1', '')]);
+  await clearPosted(page);
+
+  await focusText(page, 'e1', 0);
+  await page.keyboard.press('Backspace');
+
+  const edit = await waitForEdit(page);
+  expect(edit.ops).toEqual([{ op: 'mergeWithPrevious', id: 'e1' }]);
+  expect(await textsInDom(page)).toEqual(['1', '2']);
+  expect(await caretState(page)).toEqual({ id: 'n2', offset: 1 });
+});
+
+test('首节点非空时 Backspace 不删除（不丢正文，保持 no-op）', async ({ page }) => {
+  await openOutline(page, [node('a', 'foo'), node('b', 'bar')]);
+  await clearPosted(page);
+
+  await focusText(page, 'a', 0);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(500);
+
+  expect(await posted(page)).toEqual([]);
+  expect(await textsInDom(page)).toEqual(['foo', 'bar']);
+});
+
+test('文档仅剩一个空节点时 Backspace 不删除（不留空文档）', async ({ page }) => {
+  await openOutline(page, [node('only', '')]);
+  await clearPosted(page);
+
+  await focusText(page, 'only', 0);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(500);
+
+  expect(await posted(page)).toEqual([]);
+  expect(await textsInDom(page)).toEqual(['']);
+});
+
 test('结构 op 之前先 flush 待发的 setText', async ({ page }) => {
   await openOutline(page, [node('a', 'ab')]);
   await clearPosted(page);

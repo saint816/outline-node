@@ -47,6 +47,8 @@ export class SidebarView {
   private model: SidebarModel | null = null;
   /** 当前渲染出的大纲树行（按渲染顺序），拖拽落点计算用。 */
   private rows: SidebarRow[] = [];
+  /** 当前渲染出的 id → label 元素（同一 id 可同时在 Starred 与 OUTLINE 出现）。syncText 热更新用。 */
+  private readonly labels = new Map<string, HTMLElement[]>();
   private drag: {
     id: string;
     startX: number;
@@ -85,11 +87,27 @@ export class SidebarView {
     this.render();
   }
 
+  /**
+   * 打字热路径：只改侧栏里这个节点 label 的文字，不整树重渲染。
+   * store 的 setNodeText 刻意不 emit（护住击键红线，见 docs/07），侧栏靠这个跟上编辑。
+   * 同名 label 可能出现多处（Starred + OUTLINE），全部更新。
+   */
+  syncText(id: string, text: string): void {
+    const labels = this.labels.get(id);
+    if (labels === undefined) return;
+    const shown = text.trim() === '' ? t('node.empty') : text;
+    for (const label of labels) {
+      label.textContent = shown;
+      label.title = shown;
+    }
+  }
+
   private render(): void {
     const model = this.model;
     if (model === null) return;
 
     this.rows = [];
+    this.labels.clear();
     this.el.classList.toggle('collapsed', model.collapsed);
     this.collapseBtn.textContent = model.collapsed ? '›' : '‹';
     this.collapseBtn.setAttribute(
@@ -204,6 +222,10 @@ export class SidebarView {
     label.title = text;
     label.addEventListener('click', () => this.cb.onNavigate(node.id));
     row.append(label);
+    // 登记 label，供 syncText 打字热更新（同一 id 在 Starred + OUTLINE 各有一个）
+    const bucket = this.labels.get(node.id);
+    if (bucket) bucket.push(label);
+    else this.labels.set(node.id, [label]);
 
     const starred = model.isStarred(node.id);
     const star = document.createElement('button');

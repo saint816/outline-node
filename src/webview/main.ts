@@ -254,7 +254,12 @@ function commitFieldText(target: HTMLElement): void {
   const id = target.closest<HTMLElement>('.node')?.dataset.id;
   if (!id) return;
   if (target.dataset.field === 'note') store.setNodeNote(id, target.innerText);
-  else store.setNodeText(id, target.textContent ?? '');
+  else {
+    const text = target.textContent ?? '';
+    store.setNodeText(id, text);
+    // setNodeText 走不 emit 的热路径，侧栏不会自动刷新——只戳一下同名 label，O(1)。
+    sidebar.syncText(originalIdOf(id), text);
+  }
 }
 
 /** 代码块 textarea 改动 → 重建整块行（保留首尾围栏）→ setRawBlock。 */

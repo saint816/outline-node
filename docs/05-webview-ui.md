@@ -78,7 +78,7 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 | `Enter` | 光标处拆分：`split{id, offset, newId}`；特例——节点展开且有子节点且光标在行尾 → `insertSubtree{parentId:id, index:0, nodes:[空节点]}`（新建第一个子节点，Workflowy 语义） |
 | `Shift+Enter` | 聚焦/创建 note（note 为 null 时 `setNote{note:''}` 并挂载 div）；note 内 `Shift+Enter` 插入换行，`Enter` 回到 text |
 | `Tab` / `Shift+Tab` | `indent` / `outdent`（preventDefault，光标偏移保持） |
-| `Backspace`（offset 0） | `mergeWithPrevious`；dispatch 前记录 junction offset 用于恢复光标 |
+| `Backspace`（offset 0） | 有前驱 → `mergeWithPrevious`（dispatch 前记录 junction offset 恢复光标）；无前驱（首节点）且为空节点 → `delete` 该节点、光标移到下一个可见节点（Workflowy 语义）；无前驱且非空 → no-op（不丢正文）；文档仅剩一个节点时不删 |
 | `Alt+↑` / `Alt+↓` | `moveUp` / `moveDown` |
 | `Cmd/Ctrl+Enter` | `toggleChecked` |
 | ` ``` ` / ` ```lang ` + `Enter` | 空的顶层根节点 → 顶层代码块（`toCodeBlock`，见 02/04）；非顶层节点上不触发，`Enter` 按普通逻辑走 |

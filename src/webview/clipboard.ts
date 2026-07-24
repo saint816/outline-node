@@ -29,7 +29,7 @@ function onPaste(event: ClipboardEvent, ctx: ClipboardContext): void {
   const image = imageFileFrom(event.clipboardData);
   if (image) {
     event.preventDefault();
-    insertPastedImage(image, ctx);
+    insertPastedImage(image, ctx, caret);
     return;
   }
 
@@ -87,13 +87,29 @@ function imageFileFrom(data: DataTransfer | null): File | null {
 
 /**
  * 在光标处插入 ![[name]] 并把字节发给 host 写盘。
- * 用 execCommand('insertText') 让插入走和手打完全一致的路径（DOM + input→setText + 光标），
+ * 刻意不用 execCommand('insertText')——它已废弃，在 VS Code 的 webview 里对
+ * contenteditable="plaintext-only" 会静默失败（返回 false 不插入），导致图写了盘但正文
+ * 没有引用（真机复现过）。改经 store 直接把嵌入语法插进当前字段，确定性、跨环境一致。
  * 文件名带时间戳+随机串避免碰撞；host 写完回 imageSaved，webview 届时重渲染让图片加载得到。
  */
-function insertPastedImage(file: File, ctx: ClipboardContext): void {
+function insertPastedImage(file: File, ctx: ClipboardContext, caret: CaretPos): void {
   const ext = MIME_EXT[file.type] ?? 'png';
   const name = `pasted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  document.execCommand('insertText', false, `![[${name}]]`);
+  const embed = `![[${name}]]`;
+
+  const node = ctx.store.findNode(caret.nodeId);
+  if (node) {
+    if (caret.field === 'note') {
+      const base = node.note ?? '';
+      const at = Math.min(caret.offset, base.length);
+      ctx.setNextCaret({ nodeId: caret.nodeId, field: 'note', offset: at + embed.length });
+      ctx.store.dispatch({ op: 'setNote', id: node.id, note: base.slice(0, at) + embed + base.slice(at) });
+    } else {
+      const at = Math.min(caret.offset, node.text.length);
+      ctx.setNextCaret({ nodeId: caret.nodeId, field: 'text', offset: at + embed.length });
+      ctx.store.dispatch({ op: 'setText', id: node.id, text: node.text.slice(0, at) + embed + node.text.slice(at) });
+    }
+  }
 
   const reader = new FileReader();
   reader.onload = () => {
