@@ -59,10 +59,11 @@ export type MessageKey =
   | 'help.slash'
   | 'help.codeExit'
   | 'help.codeDelete'
+  | 'help.multiSelect'
+  | 'help.multiSelectClick'
   | 'slash.ariaLabel'
   | 'slash.noResults'
   | 'slash.codeBlock'
-  | 'slash.codeBlockHint'
   | 'slash.todo'
   | 'slash.numbered';
 
@@ -113,10 +114,11 @@ const EN: Record<MessageKey, string> = {
   'help.slash': 'Open the / insert menu',
   'help.codeExit': 'New node after code block',
   'help.codeDelete': 'Delete empty code block',
+  'help.multiSelect': 'Select multiple nodes (Tab / Alt+↑↓ / Cmd+Enter / Backspace apply to all)',
+  'help.multiSelectClick': 'Extend the selection to the clicked node',
   'slash.ariaLabel': 'Insert menu',
   'slash.noResults': 'No matches',
   'slash.codeBlock': 'Code block',
-  'slash.codeBlockHint': 'top-level only',
   'slash.todo': 'To-do',
   'slash.numbered': 'Numbered list',
 };
@@ -168,10 +170,11 @@ const ZH: Record<MessageKey, string> = {
   'help.slash': '打开 / 插入菜单',
   'help.codeExit': '在代码块后新建节点',
   'help.codeDelete': '删除空代码块',
+  'help.multiSelect': '多选节点（Tab / Alt+↑↓ / Cmd+Enter / Backspace 批量生效）',
+  'help.multiSelectClick': '把选区扩到点击的节点',
   'slash.ariaLabel': '插入菜单',
   'slash.noResults': '无匹配',
   'slash.codeBlock': '代码块',
-  'slash.codeBlockHint': '仅顶层',
   'slash.todo': '待办',
   'slash.numbered': '有序列表',
 };

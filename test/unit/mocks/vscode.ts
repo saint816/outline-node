@@ -20,6 +20,12 @@ export class Uri {
   static parse(value: string): Uri {
     return new Uri(value);
   }
+  /** 真 vscode.Uri 有 path（scheme/authority 之后的部分）。 */
+  get path(): string {
+    const withoutScheme = this.value.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '');
+    const slash = withoutScheme.indexOf('/');
+    return slash === -1 ? '/' : withoutScheme.slice(slash);
+  }
   static joinPath(base: Uri, ...parts: string[]): Uri {
     return new Uri([base.toString(), ...parts].join('/'));
   }
@@ -84,10 +90,16 @@ export class WorkspaceEdit {
 // ---------- 事件 ----------
 
 type ChangeListener = (e: { document: TextDocumentLike; contentChanges: unknown[] }) => void;
+const saveListeners = new Set<(doc: TextDocumentLike) => void>();
 const changeListeners = new Set<ChangeListener>();
 
 function fireDocumentChange(document: TextDocumentLike): void {
   for (const listener of [...changeListeners]) listener({ document, contentChanges: [{}] });
+}
+
+/** 触发一次「文档已保存」（自动清理孤儿图片挂在这个事件上）。 */
+export function fireDocumentSave(document: TextDocumentLike): void {
+  for (const listener of [...saveListeners]) listener(document);
 }
 
 export interface Disposable {
@@ -106,6 +118,10 @@ export const registry = {
   documents: [] as MockTextDocument[],
   /** workspace.fs.writeFile 的记录（图片写盘测试用）。 */
   writes: [] as { uri: string; bytes: Uint8Array }[],
+  createdDirs: [] as string[],
+  deletes: [] as { uri: string; useTrash: boolean }[],
+  /** readDirectory 的桩数据：目录 uri → 文件名列表。 */
+  dirs: new Map<string, string[]>(),
   /** window.showErrorMessage 的记录。 */
   errors: [] as string[],
   reset(): void {
@@ -118,6 +134,10 @@ export const registry = {
     this.writes = [];
     this.errors = [];
     changeListeners.clear();
+    saveListeners.clear();
+    this.createdDirs = [];
+    this.deletes = [];
+    this.dirs.clear();
     window.activeTextEditor = undefined;
     window.tabGroups.activeTabGroup.activeTab = undefined;
   },
@@ -127,6 +147,13 @@ export const workspace = {
   onDidChangeTextDocument(listener: ChangeListener): Disposable {
     changeListeners.add(listener);
     return { dispose: () => changeListeners.delete(listener) };
+  },
+  onDidSaveTextDocument(listener: (doc: TextDocumentLike) => void): Disposable {
+    saveListeners.add(listener);
+    return { dispose: () => saveListeners.delete(listener) };
+  },
+  openTextDocument(uri: Uri): Promise<TextDocumentLike | undefined> {
+    return Promise.resolve(registry.documents.find((d) => d.uri.toString() === uri.toString()));
   },
   applyEdit(edit: WorkspaceEdit): Promise<boolean> {
     if (!registry.applyEditSucceeds) return Promise.resolve(false);
@@ -150,12 +177,27 @@ export const workspace = {
     return undefined;
   },
   fs: {
+    createDirectory(uri: Uri): Promise<void> {
+      registry.createdDirs.push(uri.toString());
+      return Promise.resolve();
+    },
     writeFile(uri: Uri, content: Uint8Array): Promise<void> {
       registry.writes.push({ uri: uri.toString(), bytes: content });
       return Promise.resolve();
     },
+    readDirectory(uri: Uri): Promise<[string, number][]> {
+      const entries = registry.dirs.get(uri.toString());
+      if (!entries) return Promise.reject(new Error('ENOENT'));
+      return Promise.resolve(entries.map((name) => [name, FileType.File] as [string, number]));
+    },
+    delete(uri: Uri, options?: { useTrash?: boolean }): Promise<void> {
+      registry.deletes.push({ uri: uri.toString(), useTrash: options?.useTrash === true });
+      return Promise.resolve();
+    },
   },
 };
+
+export const FileType = { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 } as const;
 
 export const env = {
   language: 'en',
@@ -175,6 +217,11 @@ export class TabInputCustom {
 }
 
 export const window = {
+  statusBarMessages: [] as string[],
+  setStatusBarMessage(message: string, _hideAfterTimeout?: number): Disposable {
+    window.statusBarMessages.push(message);
+    return { dispose: () => {} };
+  },
   activeTextEditor: undefined as { document: TextDocumentLike } | undefined,
   tabGroups: {
     activeTabGroup: { activeTab: undefined as { input: unknown } | undefined },

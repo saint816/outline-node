@@ -1,8 +1,12 @@
 // 快捷键帮助浮层（? 开关）。静态内容，标签走 i18n，键位保持字面。
 
 import { t, type MessageKey } from './i18n.js';
+import { isMac } from './platform.js';
 
-const SHORTCUTS: { keys: string; labelKey: MessageKey }[] = [
+/** 隐藏已完成的键位随平台变（见 main.ts isHideCompletedKey 的注释）；打开浮层时才求值。 */
+const hideCompletedKeys = (): string => (isMac() ? 'Ctrl+O' : 'Ctrl+Alt+O');
+
+const SHORTCUTS: { keys: string | (() => string); labelKey: MessageKey }[] = [
   { keys: 'Enter', labelKey: 'help.split' },
   { keys: 'Shift+Enter', labelKey: 'help.note' },
   { keys: 'Tab / Shift+Tab', labelKey: 'help.indent' },
@@ -12,9 +16,11 @@ const SHORTCUTS: { keys: string; labelKey: MessageKey }[] = [
   { keys: 'Alt+→ / Alt+←', labelKey: 'help.zoom' },
   { keys: 'Cmd/Ctrl+.', labelKey: 'help.fold' },
   { keys: '↑ / ↓', labelKey: 'help.moveCaret' },
+  { keys: 'Shift+↑ / Shift+↓', labelKey: 'help.multiSelect' },
+  { keys: 'Shift+Click', labelKey: 'help.multiSelectClick' },
   { keys: 'Cmd/Ctrl+Z / Shift+Z', labelKey: 'help.undo' },
   { keys: 'Cmd/Ctrl+F', labelKey: 'help.search' },
-  { keys: 'Cmd/Ctrl+O', labelKey: 'help.hideCompleted' },
+  { keys: hideCompletedKeys, labelKey: 'help.hideCompleted' },
   { keys: 'Cmd/Ctrl+Shift+7', labelKey: 'help.ordered' },
   { keys: '/', labelKey: 'help.slash' },
   { keys: 'Cmd/Ctrl+Enter（代码块内）', labelKey: 'help.codeExit' },
@@ -68,7 +74,7 @@ export class HelpOverlay {
     list.className = 'help-list';
     for (const s of SHORTCUTS) {
       const dt = document.createElement('dt');
-      dt.textContent = s.keys;
+      dt.textContent = typeof s.keys === 'function' ? s.keys() : s.keys;
       const dd = document.createElement('dd');
       dd.textContent = t(s.labelKey);
       list.append(dt, dd);

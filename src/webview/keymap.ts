@@ -11,6 +11,7 @@ import {
   saveCaret,
   type CaretPos,
 } from './caret.js';
+import { emptyFence, parseFence } from './codeFence.js';
 import { isComposingEvent } from './ime.js';
 import type { Store } from './store.js';
 
@@ -25,8 +26,10 @@ export interface KeymapContext {
   clearSearch(): void;
   /** zoom 导航（走前进/后退历史），null = 回到全部。 */
   navigate(id: string | null): void;
-  /** 转成代码块后，把焦点放进该块 textarea（下一帧）。 */
+  /** 转成顶层代码块后，把焦点放进该块 textarea（下一帧）。 */
   focusCodeBlock(blockId: string): void;
+  /** 给节点挂上代码块后，把焦点放进该节点的代码块 textarea。 */
+  focusNoteCode(nodeId: string): void;
 }
 
 export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
@@ -53,8 +56,9 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
     return;
   }
 
-  // 隐藏 / 显示已完成（Workflowy ⌘O）在 document 级监听（见 main.ts）：隐藏后被隐藏
-  // 节点的焦点会掉到 body，root 级监听收不到第二次按键（焦点陷阱，BUG-002）。
+  // 隐藏 / 显示已完成（Cmd/Ctrl+Alt+O，避开 VS Code 的 ⌘O）在 document 级监听
+  // （见 main.ts）：隐藏后被隐藏节点的焦点会掉到 body，root 级监听收不到第二次
+  // 按键（焦点陷阱，BUG-002）。
 
   // undo 三道闸之二：转发给 host 执行 VS Code 的 undo（红线 5）
   if (mod && (e.key === 'z' || e.key === 'Z')) {
@@ -158,21 +162,28 @@ function onEnter(caret: CaretPos, ctx: KeymapContext): void {
     return;
   }
 
-  // 顶层空壳节点上打 ``` / ```lang 回车 → 转成顶层代码块（见 02/04；代码块只能顶层）
+  // 打 ``` / ```lang 回车 → 代码块。两条路径（见 docs/05「代码块」）：
+  //   顶层空壳节点 → 文档级代码块（toCodeBlock，文件里没有 bullet）；
+  //   其余节点     → 挂到该节点下（setNote 写入围栏块，文件里缩进在该项内容列下）。
   const fence = /^```(\w*)$/.exec(node.text);
-  const loc = ctx.store.locationOf(node.id);
-  if (
-    fence &&
-    loc?.parentId === null &&
-    node.children.length === 0 &&
-    node.note === null &&
-    node.mirror === null
-  ) {
-    const blockId = ctx.newId();
-    const restId = ctx.newId();
-    ctx.focusCodeBlock(blockId);
-    ctx.store.dispatch({ op: 'toCodeBlock', id: node.id, lang: fence[1], blockId, restId });
-    return;
+  if (fence && node.mirror === null) {
+    const loc = ctx.store.locationOf(node.id);
+    if (loc?.parentId === null && node.children.length === 0 && node.note === null) {
+      const blockId = ctx.newId();
+      const restId = ctx.newId();
+      ctx.focusCodeBlock(blockId);
+      ctx.store.dispatch({ op: 'toCodeBlock', id: node.id, lang: fence[1], blockId, restId });
+      return;
+    }
+    if (node.note === null) {
+      ctx.focusNoteCode(node.id);
+      // 一次 dispatchAll = 一条 edit = 一个 undo 步（清掉 ``` 与挂上代码块是一个动作）
+      ctx.store.dispatchAll([
+        { op: 'setText', id: node.id, text: '' },
+        { op: 'setNote', id: node.id, note: emptyFence(fence[1]) },
+      ]);
+      return;
+    }
   }
 
   // 展开且有子节点、光标在行尾 → 新建第一个子节点（Workflowy 语义）
@@ -213,6 +224,11 @@ function onShiftEnter(caret: CaretPos, ctx: KeymapContext): void {
   if (node.note === null) {
     ctx.setNextCaret({ nodeId: node.id, field: 'note', offset: 0 });
     ctx.store.dispatch({ op: 'setNote', id: node.id, note: '' });
+    return;
+  }
+  // note 已经是代码块时没有 [data-field="note"] 可聚焦，改聚焦代码区（否则 Shift+Enter 是死键）
+  if (parseFence(node.note.split('\n'))) {
+    ctx.focusNoteCode(node.id);
     return;
   }
   focusNode(node.id, 'note', node.note.length);

@@ -107,7 +107,17 @@ host 侧的 mirror tree（带 raw）才是序列化依据；webview 树只服务
 
 围栏代码块在本模型里**始终是文档级 RawBlock**（parser 把每个围栏切成独立 RawBlock，见 03）——它是列表的兄弟、不是任何节点的孩子。这是「字节保真的纯 Markdown」的必然结果：Obsidian 里在列表中间写围栏也是同样效果。因此：
 
-- **代码块只能在顶层，不能嵌套在某个节点下面。** 想要嵌套代码只能走「私有约定」，会破坏「卸载后原样可读」，故不做。
+- **文档级代码块只能在顶层**（它是 ListBlock 的兄弟，不是任何节点的孩子）。
+- **挂在节点下的代码块走另一条路：节点的 `note`。** 文件里缩进在该列表项内容列下的围栏块，parser 本来就解析成该节点的 note（见 03「note 续行」），Obsidian / Logseq 也照常渲染。渲染层识别「note 整体是围栏块」并渲染成代码块 UI，编辑走既有的 `setNote` —— **没有新增 op、没有新增节点种类、没有私有约定**：
+
+  ```markdown
+  - 节点
+    ```js
+    const x = 1;
+    ```
+  ```
+
+  一个节点的 note 只有一份，所以「代码块」与「普通备注」二选一（已有备注的节点不提供 `/code`）。
 - **可编辑**：渲染层给代码块 RawBlock 一个 `<textarea>`，改动经 `setRawBlock{id, lines}` 整块替换（保留首尾围栏行，只换正文）。`setRawBlock` 只对「首行是围栏」的 RawBlock 生效，其余 RawBlock 仍不可变（守住不变式 2 的边界）。
 - **可创建**：在**空的顶层根节点**上打 ` ``` ` / ` ```lang ` 再回车，经 `toCodeBlock{id, lang, blockId, restId}` 把该节点所在 ListBlock 从该位置切开，中间插入代码块 RawBlock。非根节点上不触发（保持 ``` 为普通文本）。`blockId`/`restId` 由 webview 生成、host 采纳（同 split 的 newId），保证两端确定性一致。
 

@@ -379,11 +379,25 @@ export class Store {
 
   /** 结构性 op：先 flush 待发的 setText，本地乐观更新后立即发送。 */
   dispatch(rawOp: Op): boolean {
-    const op = normalizeOp(rawOp);
+    return this.dispatchAll([rawOp]);
+  }
+
+  /**
+   * 一批 op 作为「一次编辑」发出：依次本地乐观应用，合成**单条 edit 消息**——
+   * 一条 edit = host 侧一次 workspace.applyEdit = 一个 VS Code undo 步（见 docs/04）。
+   * 多选批量操作靠它做到「一次 Cmd+Z 全撤销」。no-op 的 op 不入队（如首个兄弟的 indent）。
+   */
+  dispatchAll(rawOps: readonly Op[]): boolean {
     this.flushPending();
-    if (!applyOp(this.current, op).changed) return false;
+    let changed = false;
+    for (const rawOp of rawOps) {
+      const op = normalizeOp(rawOp);
+      if (!applyOp(this.current, op).changed) continue;
+      this.pending.push(op);
+      changed = true;
+    }
+    if (!changed) return false;
     this.mirroredIds = null;
-    this.pending.push(op);
     this.flushPending();
     this.emit();
     return true;

@@ -1,5 +1,7 @@
 {
   "config.defaultIndent.description": "Indent unit used for new files, or when it can't be detected from content",
   "command.openAsOutline.title": "Open as Outline",
-  "command.openAsText.title": "Open as Markdown Text"
+  "command.openAsText.title": "Open as Markdown Text",
+  "command.cleanupImages.title": "Clean Up Unused Pasted Images",
+  "config.cleanupUnusedImagesOnSave.description": "On save, move pasted images that are no longer referenced (pasted-* in <file>/assets/) to the trash"
 }

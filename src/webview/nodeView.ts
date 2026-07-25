@@ -2,8 +2,9 @@
 // 只负责「一个节点 → 一段 DOM」，不感知树的增删改顺序（那是 renderer 的事）。
 
 import type { OutlineNode } from '../core/model.js';
+import { parseFence, renderFence, type CodeFence } from './codeFence.js';
 import { t } from './i18n.js';
-import { parseImages, wholeLineImage, type ParsedImage } from './images.js';
+import { isImageOnly, parseImages, wholeLineImage, type ParsedImage } from './images.js';
 import type { MirrorState } from './mirror.js';
 
 export interface UpdateOptions {
@@ -27,9 +28,15 @@ export class NodeView {
   private readonly textEl: HTMLElement;
   private badgeEl: HTMLElement | null = null;
   private noteEl: HTMLElement | null = null;
+  /** note 整体是围栏代码块时的代码块 DOM（与 noteEl 二选一，见 syncNote）。 */
+  private noteCodeEl: HTMLElement | null = null;
+  /** 代码块是否挂在节点行内（正文为空的「代码块节点」）。 */
+  private noteCodeInline = false;
   private hintEl: HTMLElement | null = null;
   private imagesEl: HTMLElement | null = null;
   private imagesKey = '';
+  /** 图片是否挂在节点行内（图片节点）而非行下方。 */
+  private imagesInline = false;
 
   constructor(
     node: OutlineNode,
@@ -87,6 +94,8 @@ export class NodeView {
     this.row.classList.toggle('checked', node.checked === true);
     this.row.classList.toggle('task', node.checked !== null);
     this.row.classList.toggle('mirror', node.mirror !== null);
+    // 正文只有图片语法 → 不显示源码，只留图（CSS 在未聚焦时把 .text 透明掉，见 styles.css）
+    this.row.classList.toggle('image-only', node.mirror === null && isImageOnly(node.text));
     // 有序项：bullet 位显示编号（`12.`），普通节点为空（由 CSS 画圆点）
     this.row.classList.toggle('ordered', node.ordered != null);
     const bulletText = node.ordered ? node.ordered.num + node.ordered.delim : '';
@@ -102,21 +111,33 @@ export class NodeView {
   /**
    * 节点正文里的图片渲染成预览（源码 `![[x]]` / `![](x)` 仍留在可编辑正文里，可继续编辑）。
    * 纯渲染，不改数据。镜像行不参与。图片集合未变时跳过重建，避免重复加载闪烁。
+   *
+   * **图片节点**（正文只有图片语法）把预览挂进 `.node-row` 里、排在隐形正文之前：
+   * 图片本身就是这一行的内容，不该在它上面多出一条空行（实机反馈）。其余节点仍挂在行
+   * 下方（正文有字，图是附加内容）。
    */
   private syncImages(node: OutlineNode): void {
     const images: ParsedImage[] = node.mirror !== null ? [] : parseImages(node.text);
+    const inline = this.row.classList.contains('image-only');
     const key = images.map((i) => i.src).join('\n');
-    if (key === this.imagesKey && (images.length === 0) === (this.imagesEl === null)) return;
+    const unchanged =
+      key === this.imagesKey &&
+      inline === this.imagesInline &&
+      (images.length === 0) === (this.imagesEl === null);
+    if (unchanged) return;
     this.imagesKey = key;
+    this.imagesInline = inline;
 
     if (images.length === 0) {
       this.imagesEl?.remove();
       this.imagesEl = null;
       return;
     }
-    if (this.imagesEl === null) {
-      this.imagesEl = div('node-images');
-      this.el.insertBefore(this.imagesEl, this.childrenEl);
+    if (this.imagesEl === null) this.imagesEl = div('node-images');
+    const parent = inline ? this.row : this.el;
+    if (this.imagesEl.parentElement !== parent) {
+      if (inline) this.row.insertBefore(this.imagesEl, this.textEl);
+      else this.el.insertBefore(this.imagesEl, this.childrenEl);
     }
     this.imagesEl.replaceChildren(...images.map((im) => imageEl(im)));
   }
@@ -171,7 +192,53 @@ export class NodeView {
     this.badgeEl.title = 'block id: ' + node.blockId;
   }
 
+  /**
+   * note 整体是围栏代码块时，渲染成代码块 UI（语言徽标 + textarea），而不是纯文本备注。
+   *
+   * 这就是「节点下面挂代码块」——文件里是缩进在该列表项内容列下的围栏块，parser 早就
+   * 把它解析成该节点的 note（见 docs/03），Obsidian / Logseq 也照常渲染。所以本功能
+   * 不需要新 op、不改数据模型：编辑走既有的 setNote。
+   */
+  private syncNoteCode(fence: CodeFence, node: OutlineNode): void {
+    // 与普通 note 二选一：切换过来时把旧的备注 div 摘掉（正在编辑它时留到下一帧）
+    if (this.noteEl !== null && this.noteEl !== document.activeElement) {
+      this.noteEl.remove();
+      this.noteEl = null;
+    }
+    if (this.noteCodeEl === null) this.noteCodeEl = div('node-code raw-block code-block');
+
+    // 正文为空 = 这个节点就是一个代码块：把块挂进行内，别在它上面留一条空 bullet 行
+    // （同图片节点，见 syncImages）。正文有字时仍挂在行下方——那时代码是附加内容。
+    const inline = node.text === '';
+    this.row.classList.toggle('code-only', inline);
+    const parent = inline ? this.row : this.el;
+    if (this.noteCodeEl.parentElement !== parent || inline !== this.noteCodeInline) {
+      if (inline) this.row.insertBefore(this.noteCodeEl, this.textEl);
+      else this.el.insertBefore(this.noteCodeEl, this.childrenEl);
+      this.noteCodeInline = inline;
+    }
+
+    // 正在编辑本块时绝不重建 textarea，否则打断输入（同 updateRawBlockView）
+    if (this.noteCodeEl.contains(document.activeElement)) return;
+    renderFence(this.noteCodeEl, fence, 'noteCode');
+  }
+
   private syncNote(node: OutlineNode, opts: UpdateOptions): void {
+    const fence = node.note === null ? null : parseFence(node.note.split('\n'));
+    if (fence !== null) {
+      this.syncNoteCode(fence, node);
+      return;
+    }
+    this.row.classList.remove('code-only');
+    // note 被删掉（空块 Backspace）时无条件摘除：此刻焦点正在这个 textarea 里，
+    // 若照搬「正在编辑就不动」的守卫，代码块会赖着不走。
+    if (
+      this.noteCodeEl !== null &&
+      (node.note === null || !this.noteCodeEl.contains(document.activeElement))
+    ) {
+      this.noteCodeEl.remove();
+      this.noteCodeEl = null;
+    }
     if (node.note === null) {
       // 只在 note 本身没被聚焦时移除：skipText 会因「同节点正文获得焦点」而误挡删除，
       // 但删掉一个空 note 不会动到正在编辑的正文，只需避免把「正在编辑的 note」抽走。
@@ -203,21 +270,14 @@ export function createRawBlockView(lines: string[]): HTMLElement {
 export function updateRawBlockView(el: HTMLElement, lines: string[]): void {
   // 围栏代码块：隐藏 ``` 围栏、显示语言标签、代码样式（只读，原文仍在文件里）。
   // parser 已把每个围栏块切成独立 RawBlock，这里首行是 fence 即整块为代码。
-  const code = codeBlockOf(lines);
+  const code = parseFence(lines);
   if (code) {
     el.classList.add('code-block');
     el.classList.remove('blank', 'image-block');
     // 正在编辑本块时绝不重建 textarea，否则打断输入（同 node 的 skipText 思路）
     if (el.contains(document.activeElement)) return;
     // 保留原始首尾围栏行，编辑时只换中间正文（见 04 setRawBlock）
-    el.dataset.codeOpen = code.open;
-    if (code.close !== null) el.dataset.codeClose = code.close;
-    else delete el.dataset.codeClose;
-    const sig = code.lang + ' ' + code.code;
-    if (el.dataset.codeSig !== sig) {
-      el.dataset.codeSig = sig;
-      renderCodeBlock(el, code);
-    }
+    renderFence(el, code, 'code');
     return;
   }
   el.classList.remove('code-block');
@@ -246,53 +306,6 @@ export function updateRawBlockView(el: HTMLElement, lines: string[]): void {
   if (el.firstElementChild || el.textContent !== text) el.textContent = text;
   // 仅含空行的 RawBlock 渲染成细分隔，让被空行拆开的列表在视觉上连续（纯样式，不改模型）
   el.classList.toggle('blank', lines.every((line) => line.trim() === ''));
-}
-
-const FENCE_OPEN_RE = /^[ \t]*(`{3,}|~{3,})(.*)$/;
-
-interface CodeBlock {
-  lang: string;
-  code: string;
-  open: string; // 原始开围栏行（保留字节）
-  close: string | null; // 原始闭围栏行；未闭合时 null
-}
-
-/** RawBlock 首行是围栏时，抽出语言、正文与原始首尾围栏行；否则 null。 */
-function codeBlockOf(lines: string[]): CodeBlock | null {
-  if (lines.length < 1) return null;
-  const open = FENCE_OPEN_RE.exec(lines[0]);
-  if (!open) return null;
-  const fence = open[1][0]; // '`' 或 '~'
-  const lang = open[2].trim().split(/\s+/)[0] ?? '';
-  const closeRe = new RegExp('^[ \\t]*' + (fence === '`' ? '`' : '~') + '{3,}[ \\t]*$');
-  const closed = lines.length > 1 && closeRe.test(lines[lines.length - 1]);
-  const body = lines.slice(1, closed ? lines.length - 1 : lines.length);
-  return {
-    lang,
-    code: body.join('\n'),
-    open: lines[0],
-    close: closed ? lines[lines.length - 1] : null,
-  };
-}
-
-function renderCodeBlock(el: HTMLElement, code: CodeBlock): void {
-  const parts: HTMLElement[] = [];
-  if (code.lang) {
-    const label = document.createElement('span');
-    label.className = 'code-lang';
-    label.textContent = code.lang;
-    parts.push(label);
-  }
-  // 可编辑正文：input 事件在 main.ts 委托里转成 setRawBlock（见 04）
-  const area = document.createElement('textarea');
-  area.className = 'code-input';
-  area.dataset.field = 'code';
-  area.spellcheck = false;
-  area.wrap = 'off';
-  area.value = code.code;
-  area.rows = Math.max(1, code.code.split('\n').length);
-  parts.push(area);
-  el.replaceChildren(...parts);
 }
 
 function imageEl(image: ParsedImage): HTMLImageElement {

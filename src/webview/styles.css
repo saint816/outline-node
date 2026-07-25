@@ -145,11 +145,9 @@ body {
   caret-color: var(--vscode-editorCursor-foreground);
 }
 
-.text:focus,
-.note:focus {
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-}
+/* 正在编辑的节点刻意不画焦点框：闪烁的光标已经说明了「我在这」，再套一圈边框
+   会让整页在打字时不停跳框（用户反馈）。高对比度主题下仍保留焦点提示，见文末
+   forced-colors 段——那里没有可靠的光标可见性保证。 */
 
 /* 完成态走 Workflowy 风格：只给灰色删除线，不画 checkbox 方框（用户选择 B）。
    文件层仍是 - [x] / - [ ]，Obsidian 打开照旧渲染勾选框——那是 markdown 任务语法的固有含义。 */
@@ -235,8 +233,15 @@ body {
   font-weight: 600;
 }
 
-.zoomed > .node > .node-row > .bullet,
+/* zoom 根当页面标题：标题首字与子节点圆点左边缘对齐（实机反馈）。
+   toggle 完全不占位、bullet 占位但隐藏 —— 于是标题起点 = 16px + 4px gap + 2px padding
+   = 22px，正好是子节点圆点的左边缘（toggle 14 + gap 4 + bullet 内 left:4）。
+   两个都 display:none 会贴到最左、两个都 visibility:hidden 又比子节点还靠右。 */
 .zoomed > .node > .node-row > .toggle {
+  display: none;
+}
+
+.zoomed > .node > .node-row > .bullet {
   visibility: hidden;
 }
 
@@ -270,6 +275,13 @@ body {
 /* 过滤只切 class，不动 DOM 结构（见 docs/07） */
 .node.hidden {
   display: none;
+}
+
+/* ---------- 多选 ---------- */
+
+/* .selected 只打在选区的子树根上，整棵子树跟着高亮——与批量 op 的作用范围一致 */
+.node.selected .node-row {
+  background: var(--vscode-editor-selectionBackground, var(--vscode-list-activeSelectionBackground));
 }
 
 .searching .node.search-hit > .node-row {
@@ -339,6 +351,50 @@ body {
   border: 1px solid var(--vscode-panel-border, transparent);
 }
 
+/* 正文只有图片嵌入语法的节点：不显示源码，只留图（聚焦时才现形，可继续编辑）。
+   刻意不用 display:none —— 那样 restoreCaret / 点击都聚焦不上，节点就成了改不动的死块。
+   改为透明 + 不撑行高（min-height:0），图片挂进行内（见 nodeView.syncImages），于是
+   图片上方不再多出一条空行；正文拉伸成图片右侧的隐形点击区，点它即回源码态。 */
+.node-row.image-only > .text:not(:focus) {
+  opacity: 0;
+  /* 关键：透明不等于不占位——长长的 data: URI 源码会换行，把整行撑到几十像素高
+     （实机看到的就是图片上方那条怪空行）。单行 + 裁掉，行高回到一行。 */
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 图片节点：预览就在节点行里（紧跟 bullet），不额外占一行 */
+.node-row > .node-images {
+  margin: 2px 0;
+  min-width: 0;
+}
+
+/* 图片预览可点击放大 */
+.node-image {
+  cursor: zoom-in;
+}
+
+/* 放大预览浮层 */
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 82%, transparent);
+  cursor: zoom-out;
+}
+
+.image-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 4px 24px var(--vscode-widget-shadow, transparent);
+}
+
 /* 独立成行的图片块：去掉 raw-block 的灰底 */
 .raw-block.image-block {
   padding: 0;
@@ -381,6 +437,35 @@ body {
   letter-spacing: 0.03em;
   color: var(--vscode-descriptionForeground);
   background: var(--vscode-badge-background);
+}
+
+/* 挂在节点下的代码块（= 该节点的 note 恰为围栏块）：缩进对齐到正文列 */
+.node-code.raw-block {
+  margin: 4px 0 4px 34px;
+}
+
+/* 「代码块节点」（正文为空）：块直接排在 bullet 右边，不在它上面留一条空行。
+   行允许换行，聚焦空正文时它才折到代码块下方单独成行（basis 100%）。 */
+.node-row.code-only {
+  flex-wrap: wrap;
+}
+
+.node-row > .node-code.raw-block {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 2px 0;
+}
+
+.node-row.code-only > .text:not(:focus) {
+  flex: 0 0 0;
+  width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.node-row.code-only > .text:focus {
+  flex: 1 0 100%;
 }
 
 /* 可编辑代码块正文 */
@@ -536,6 +621,11 @@ body {
   }
 
   .searching .node.search-hit > .node-row {
+    outline: 1px solid Highlight;
+    background: none;
+  }
+
+  .node.selected .node-row {
     outline: 1px solid Highlight;
     background: none;
   }

@@ -31,7 +31,7 @@ export type W2H =
   | { type: 'requestRedo' }
   | { type: 'saveFolding'; foldedKeys: string[] }                // 折叠变化时节流上报（见 06）
   | { type: 'saveBookmarks'; bookmarkKeys: string[] }            // 星标变化时节流上报（nodeKey；UI-state，仿 saveFolding）
-  | { type: 'saveImage'; name: string; dataBase64: string };    // 粘贴/拖入图片：host 把字节写到文档同目录的 name
+  | { type: 'saveImage'; name: string; dataBase64: string };    // 粘贴/拖入图片：name 是**相对文档目录的路径**（`<文件名>/assets/pasted-…`）
 
 // ---------- host → webview ----------
 export type H2W =
@@ -54,9 +54,10 @@ export interface EditorConfig {
 
 单向 + 一次确认，**不改文件格式**（`.md` 只是普通文本插入 `![[name]]`，走正常 edit op；另写一个新二进制文件）：
 
-1. webview 侧 `clipboard.ts` 读到剪贴板里的图片，就地生成唯一文件名 `pasted-<ts>-<rand>.<ext>`，用 `execCommand('insertText')` 在光标处插入 `![[name]]`（与手打同一条路径：DOM + input→setText + 光标），并发 `saveImage{name, dataBase64}`。
-2. host 侧在 **provider**（不是 DocumentSession——后者保持 vscode 无关）用 `workspace.fs.writeFile` 把字节写到**文档同目录**的 `name`。文件名只接受 `[A-Za-z0-9._-]+` 且不含 `..`，挡住路径穿越。
-3. 写完回 `imageSaved{name}`，webview 收到后重渲染——此时文件已落盘，刚插入的 `![[name]]` 预览 `<img>` 才加载得到。无需 requestId 关联：重渲染是幂等的整体刷新。
+1. webview 侧 `clipboard.ts` 读到剪贴板里的图片，生成 `<assetsDir>/pasted-<ts>-<rand>.<ext>`（`assetsDir` 来自 host 注入的 `data-assets-dir` = `<文件名去扩展名>/assets`），**经 store** 在光标处插入 `![[name]]`（`execCommand` 在 VS Code webview 里静默失败，见 05），并发 `saveImage{name, dataBase64}`。
+2. host 侧在 **provider**（不是 DocumentSession——后者保持 vscode 无关）把 `name` 按 `/` 拆段逐段白名单校验（拒绝空段 / `.` / `..` / `\ : * ? " < > |`，最多 4 段），必要时 `createDirectory` 再 `workspace.fs.writeFile`。**协议字段形状未变**，只是 `name` 从纯文件名放宽为相对路径。
+3. 写完回 `imageSaved{name}`，webview 收到后重渲染 + 给该图打 cache-bust（预览请求可能早于写盘，404 会被缓存，BUG-005）。无需 requestId 关联：重渲染是幂等的整体刷新。
+4. **删除不与删节点耦合**：删节点只是文本编辑（可 undo），删文件不可 undo。孤儿图片走**保存后自动清理**（默认开，只动 `pasted-*`，移废纸篓）+ **显式命令** `outlineNode.cleanupImages`（全量 + 确认），见 `extension/imageCleanup.ts`。
 
 图片能被 webview 加载依赖 `localResourceRoots` 含文档目录 + CSP `img-src`（见 05 / provider）。
 
@@ -152,6 +153,7 @@ export class DocumentSession {
 - 维护 `baseVersion`（init/ack/refresh 推进）、`seq` 自增、待发 op 缓冲。
 - **setText 防抖 300ms**，同一节点连续输入合并为最后一次；**连续输入超过 1s 强制 flush**（限制丢失窗口与 undo 步长）。
 - **立即 flush 的时机**：任何结构性 op 入队之前、节点 blur、Ctrl/Cmd+Z（先 flush 再发 requestUndo）、`visibilitychange` 隐藏、`saveFolding` 之前。
+- **批量 dispatch**（`dispatchAll(ops)`）：多选等场景把 n 个 op 依次乐观应用后合成**一条** `edit`。一条 `edit` = host 一次 `workspace.applyEdit` = **一个 VS Code undo 步**，所以批量操作能被一次 `Cmd+Z` 整体撤销。中途 no-op 的 op 不入队（协议不变，只是同一 `ops[]` 里多几条）。
 - 收到 `refresh{cause:'conflict'}`：丢弃未 ack 的本地 op 队列，应用快照；若正在编辑的节点在新树中 id 存活，把 contenteditable 中未提交的文本作为新 `setText` 重新提交——用户感知几乎无损。**不做 OT/CRDT**：单用户单文件场景冲突窗口 < 防抖间隔，全量刷新 + 文本重提交是正确的复杂度。
 
 ## minimalEdits（core/lineDiff.ts）

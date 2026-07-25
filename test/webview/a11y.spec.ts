@@ -32,13 +32,21 @@ test('正文与备注是单行/多行 textbox', async ({ page }) => {
   await expect(text).toHaveAttribute('contenteditable', 'plaintext-only');
 });
 
-test('聚焦的节点有可见的 focus 环', async ({ page }) => {
+// 正在编辑的节点刻意不画焦点框（用户反馈：打字时整页跳框），焦点提示交给闪烁的光标：
+// caret-color 必须显式跟随主题，否则在某些主题下光标近乎不可见 = 完全没有焦点提示。
+// 高对比度（forced-colors）下另有 outline 兜底，见 styles.css 文末。
+test('聚焦的节点不画焦点框，但光标颜色跟随主题', async ({ page }) => {
   await openOutline(page, [node('a', 'A')]);
   await focusText(page, 'a', 0);
-  const shadow = await page
+  const style = await page
     .locator('.node[data-id="a"] [data-field="text"]')
-    .evaluate((el) => getComputedStyle(el).boxShadow);
-  expect(shadow).not.toBe('none');
+    .evaluate((el) => {
+      const css = getComputedStyle(el);
+      return { shadow: css.boxShadow, outline: css.outlineStyle, caret: css.caretColor };
+    });
+  expect(style.shadow).toBe('none');
+  expect(style.outline).toBe('none');
+  expect(style.caret).not.toBe('');
 });
 
 test('搜索框有 aria-label', async ({ page }) => {

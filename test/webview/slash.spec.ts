@@ -77,15 +77,31 @@ test('/num + Enter：删掉 /num 并转有序列表（toggleOrdered）', async (
   await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText('');
 });
 
-test('嵌套节点上 /code 不提供代码块（仅顶层）', async ({ page }) => {
+test('嵌套节点上 /code：代码块挂到该节点下（setNote 围栏块），节点仍在', async ({ page }) => {
   await openOutline(page, [node('a', 'root', [node('a1', '')])]);
   await focusText(page, 'a1', 0);
+  await clearPosted(page);
   await page.keyboard.type('/code');
+  await expect(page.locator('.slash-menu .slash-item')).toHaveText([/Code block/]);
+  await page.keyboard.press('Enter');
 
-  // Code 被 enabled 过滤掉，query "code" 无其它匹配 → 显示占位、不产生代码块
+  // 节点保留，代码块挂在它下面并获得焦点
+  await expect(page.locator('.node[data-id="a1"]')).toHaveCount(1);
+  const area = page.locator('.node[data-id="a1"] > .node-row > .node-code textarea.code-input');
+  await expect(area).toHaveCount(1);
+  await expect(area).toBeFocused();
+  // 顶层文档级代码块不该出现
+  await expect(page.locator('#outline-root > .list-block > .raw-block.code-block')).toHaveCount(0);
+
+  await inject(page, { type: 'ack', seq: 1, version: 2 });
+  await waitForOp(page, 'setNote');
+});
+
+test('已有备注的节点不提供 /code（note 只有一份，别顶掉原备注）', async ({ page }) => {
+  await openOutline(page, [{ id: 'a', text: 'root ', note: '已有备注', children: [] }]);
+  await focusText(page, 'a', 5); // 词首：`/` 前必须是空白，否则根本不触发菜单
+  await page.keyboard.type('/code');
   await expect(page.locator('.slash-menu .slash-empty')).toBeVisible();
-  await page.keyboard.press('Enter'); // 无匹配时 Enter 放行为普通拆分，不转代码块
-  await expect(page.locator('.raw-block.code-block')).toHaveCount(0);
 });
 
 test('Esc 关闭菜单；/ 后接无关词无匹配', async ({ page }) => {

@@ -30,6 +30,16 @@ export function parseImages(text: string): ParsedImage[] {
   return out;
 }
 
+/** 正文除了图片嵌入语法之外没有别的内容（且至少有一张图）——「图片节点」的判据。 */
+export function isImageOnly(text: string): boolean {
+  if (text.trim() === '') return false;
+  const rest = text.replace(MD_IMAGE_RE, '').replace(WIKI_IMAGE_RE, (m, target: string) =>
+    // 块引用 / 非图 wiki 嵌入不算图片，留在 rest 里参与判定
+    target.startsWith('#') || !looksLikeImage(target) ? m : '',
+  );
+  return rest.trim() === '' && parseImages(text).length > 0;
+}
+
 /** 整行恰好是一张图（前后可有空白）时返回它，否则 null——用于独立成行的图片块。 */
 export function wholeLineImage(line: string): ParsedImage | null {
   const trimmed = line.trim();

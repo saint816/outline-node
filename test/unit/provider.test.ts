@@ -2,7 +2,14 @@
 // 文档事件回流。用最小 vscode 桩（test/unit/mocks/vscode.ts）在纯 Node 下跑。
 import { beforeEach, describe, expect, it } from 'vitest';
 // 直接引 mock 模块：vitest 的 alias 让 src/extension 里的 'vscode' 解析到同一份实例
-import { MockTextDocument, TabInputCustom, Uri, registry, window as mockWindow } from './mocks/vscode.js';
+import {
+  MockTextDocument,
+  TabInputCustom,
+  Uri,
+  fireDocumentSave,
+  registry,
+  window as mockWindow,
+} from './mocks/vscode.js';
 import { activate, readEditorConfig } from '../../src/extension/extension.js';
 import { OutlineEditorProvider } from '../../src/extension/outlineEditorProvider.js';
 import { FoldingStore } from '../../src/extension/foldingStore.js';
@@ -110,6 +117,7 @@ describe('activate', () => {
     expect([...registry.commands.keys()]).toEqual([
       'outlineNode.openAsOutline',
       'outlineNode.openAsText',
+      'outlineNode.cleanupImages',
     ]);
   });
 
@@ -186,6 +194,46 @@ describe('provider ↔ session 端到端', () => {
     expect(harness.posted.some((m) => m.type === 'imageSaved' && m.name === 'pasted-1.png')).toBe(
       true,
     );
+  });
+
+  it('saveImage：带目录的名字先建目录再写盘（图片进 <文件名>/assets/）', async () => {
+    const harness = openEditor('- a\n');
+    const dataBase64 = Buffer.from('PNG').toString('base64');
+    await harness.send({ type: 'saveImage', name: 'a/assets/pasted-2.png', dataBase64 });
+
+    expect(registry.createdDirs.length).toBe(1);
+    expect(registry.writes).toHaveLength(1);
+    expect(registry.writes[0].uri).toContain('a/assets/pasted-2.png');
+    expect(harness.posted.some((m) => m.type === 'imageSaved' && m.name === 'a/assets/pasted-2.png')).toBe(true);
+  });
+
+  // 「删掉图片节点后图片资源还在」的修复：清理挂在**保存**上（给 undo 留窗口），
+  // 只动扩展自己生成的 pasted-*，且走废纸篓（三道可逆保障，见 imageCleanup.ts）。
+  it('保存后自动清理：未被引用的 pasted-* 进废纸篓，仍被引用的与用户自带文件不动', async () => {
+    const harness = openEditor('- 还留着 ![[a/assets/pasted-1-keep.png]]\n');
+    registry.dirs.set('file:///notes/a.outline.md/../a/assets', [
+      'pasted-1-keep.png', // 仍被引用 → 留
+      'pasted-2-gone.png', // 已无引用 → 删
+      'my-photo.png', // 用户自己放的（非 pasted-*）→ 不碰
+      'notes.txt', // 非图片 → 不碰
+    ]);
+
+    fireDocumentSave(harness.document);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(registry.deletes.map((d) => d.uri.split('/').pop())).toEqual(['pasted-2-gone.png']);
+    expect(registry.deletes[0].useTrash).toBe(true); // 可恢复
+  });
+
+  it('设置关掉后保存不清理任何文件', async () => {
+    const harness = openEditor('- 空\n');
+    registry.config.set('cleanupUnusedImagesOnSave', false);
+    registry.dirs.set('file:///notes/a.outline.md/../a/assets', ['pasted-9-gone.png']);
+
+    fireDocumentSave(harness.document);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(registry.deletes).toHaveLength(0);
   });
 
   it('saveImage：拒绝路径穿越的文件名，不写盘、报错', async () => {

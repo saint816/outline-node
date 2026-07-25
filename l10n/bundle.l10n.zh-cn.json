@@ -1,5 +1,9 @@
 {
   "OutlineNode: No active Markdown file.": "OutlineNode: 没有活动的 Markdown 文件。",
   "OutlineNode: Invalid image name.": "OutlineNode: 图片文件名不合法。",
-  "OutlineNode: Failed to save pasted image.": "OutlineNode: 保存粘贴的图片失败。"
+  "OutlineNode: Failed to save pasted image.": "OutlineNode: 保存粘贴的图片失败。",
+  "OutlineNode: No unused images to clean up.": "OutlineNode: 没有需要清理的图片。",
+  "OutlineNode: {0} unused image(s) in {1}. Move them to the trash?": "OutlineNode: {1} 里有 {0} 张图片已不再被引用，移到废纸篓？",
+  "OutlineNode: Moved {0} unused image(s) to the trash.": "OutlineNode: 已把 {0} 张未引用的图片移到废纸篓。",
+  "Move to Trash": "移到废纸篓"
 }

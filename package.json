@@ -2,7 +2,7 @@
   "name": "outline-node",
   "displayName": "OutlineNode — Workflowy-style Outliner",
   "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "license": "MIT",
   "publisher": "outlinenode",
   "icon": "media/icon.png",
@@ -82,6 +82,12 @@
         "title": "%command.openAsText.title%",
         "category": "OutlineNode",
         "icon": "$(code)"
+      },
+      {
+        "command": "outlineNode.cleanupImages",
+        "title": "%command.cleanupImages.title%",
+        "category": "OutlineNode",
+        "icon": "$(clear-all)"
       }
     ],
     "menus": {
@@ -112,6 +118,10 @@
         {
           "command": "outlineNode.openAsOutline",
           "when": "editorLangId == markdown"
+        },
+        {
+          "command": "outlineNode.cleanupImages",
+          "when": "activeCustomEditorId == outlineNode.outline || activeCustomEditorId == outlineNode.outlineOptional || editorLangId == markdown"
         }
       ]
     },
@@ -139,6 +149,11 @@
             "firstLevel"
           ],
           "default": "none"
+        },
+        "outlineNode.cleanupUnusedImagesOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.cleanupUnusedImagesOnSave.description%"
         }
       }
     }

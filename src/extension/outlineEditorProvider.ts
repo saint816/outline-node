@@ -4,6 +4,7 @@ import { asW2H, type EditorConfig, type H2W, type W2H } from '../shared/protocol
 import { DocumentSession, type SessionHost } from './documentSession.js';
 import type { FoldingStore } from './foldingStore.js';
 import type { BookmarkStore } from './bookmarkStore.js';
+import { autoPruneOrphanImages } from './imageCleanup.js';
 
 /**
  * CustomTextEditorProvider：webview 创建、HTML/CSP、session 生命周期。
@@ -64,6 +65,16 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
         if (e.contentChanges.length === 0) return;
         session.onDocumentChanged();
       }),
+      // 保存后清理孤儿图片：删节点只是可 undo 的文本编辑，删文件不是——延到保存给 undo
+      // 留出窗口，且只动扩展自己生成的 pasted-*、移废纸篓（见 imageCleanup.ts 顶部）。
+      vscode.workspace.onDidSaveTextDocument((saved) => {
+        if (saved.uri.toString() !== document.uri.toString()) return;
+        const on = vscode.workspace
+          .getConfiguration('outlineNode')
+          .get<boolean>('cleanupUnusedImagesOnSave');
+        if (on === false) return;
+        void autoPruneOrphanImages(document, assetsDirFor(document.uri));
+      }),
     ];
 
     webviewPanel.onDidDispose(() => {
@@ -87,6 +98,10 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     const lang = vscode.env.language || 'en';
     // 图片：文档所在目录的 webview URI，供 webview 把相对路径改写成可加载的 vscode-webview:// 地址。
     const docBase = webview.asWebviewUri(vscode.Uri.joinPath(document.uri, '..')).toString();
+    // 粘贴图片的落盘目录（相对文档）：`<文件名>/assets`，别把图片撒在笔记同级目录里。
+    const assetsDir = assetsDirFor(document.uri);
+    // 键位随平台变（见 webview/platform.ts）：UA 嗅探在 webview / 测试环境都不可靠，由 host 注入
+    const platform = process.platform === 'darwin' ? 'mac' : 'other';
     const csp = [
       `default-src 'none'`,
       `img-src ${webview.cspSource} https: data:`,
@@ -96,7 +111,7 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
     ].join('; ');
 
     return `<!DOCTYPE html>
-<html lang="${lang}" data-doc-base="${docBase}">
+<html lang="${lang}" data-doc-base="${docBase}" data-assets-dir="${escapeAttr(assetsDir)}" data-platform="${platform}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
@@ -112,25 +127,52 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
   }
 }
 
-// webview 生成的文件名形如 pasted-<ts>-<rand>.<ext>；这里只接受纯文件名，挡住路径穿越。
-const SAFE_IMAGE_NAME = /^[A-Za-z0-9._-]+$/;
+/**
+ * 粘贴图片的落盘目录（相对文档所在目录）：`<文件名去扩展名>/assets`。
+ * `notes.outline.md` → `notes/assets`。所有权清晰，孤儿清理才敢只在这个目录里动手。
+ */
+export function assetsDirFor(uri: vscode.Uri): string {
+  const base = uri.path.split('/').pop() ?? '';
+  const name = base.replace(/\.md$/i, '').replace(/\.outline$/i, '');
+  return (name === '' ? 'assets' : name + '/assets');
+}
+
+// webview 生成的名字形如 `<dir>/pasted-<ts>-<rand>.<ext>`：逐段白名单，挡住路径穿越。
+const SAFE_SEGMENT = /^[^/\\:*?"<>|]+$/;
+
+function safeRelativePath(name: string): string[] | null {
+  const segments = name.split('/');
+  if (segments.length === 0 || segments.length > 4) return null;
+  for (const seg of segments) {
+    if (seg === '' || seg === '.' || seg === '..' || !SAFE_SEGMENT.test(seg)) return null;
+  }
+  return segments;
+}
 
 async function saveImageFile(
   document: vscode.TextDocument,
   webview: vscode.Webview,
   msg: Extract<W2H, { type: 'saveImage' }>,
 ): Promise<void> {
-  if (!SAFE_IMAGE_NAME.test(msg.name) || msg.name.includes('..')) {
+  const segments = safeRelativePath(msg.name);
+  if (!segments) {
     void vscode.window.showErrorMessage(vscode.l10n.t('OutlineNode: Invalid image name.'));
     return;
   }
-  const target = vscode.Uri.joinPath(document.uri, '..', msg.name);
+  const target = vscode.Uri.joinPath(document.uri, '..', ...segments);
   try {
+    if (segments.length > 1) {
+      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(target, '..'));
+    }
     await vscode.workspace.fs.writeFile(target, Buffer.from(msg.dataBase64, 'base64'));
     void webview.postMessage({ type: 'imageSaved', name: msg.name } satisfies H2W);
   } catch {
     void vscode.window.showErrorMessage(vscode.l10n.t('OutlineNode: Failed to save pasted image.'));
   }
+}
+
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
 function createSessionHost(document: vscode.TextDocument, webview: vscode.Webview): SessionHost {

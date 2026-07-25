@@ -9,6 +9,7 @@
 
 import type { CaretPos } from './caret.js';
 import { caretRect, saveCaret } from './caret.js';
+import { emptyFence } from './codeFence.js';
 import { t } from './i18n.js';
 import type { OutlineNode } from '../core/model.js';
 import type { Store } from './store.js';
@@ -18,6 +19,7 @@ export interface SlashMenuContext {
   newId(): string;
   setNextCaret(pos: CaretPos): void;
   focusCodeBlock(blockId: string): void;
+  focusNoteCode(nodeId: string): void;
 }
 
 interface SlashItem {
@@ -32,18 +34,10 @@ const ITEMS: SlashItem[] = [
   {
     key: 'code',
     label: () => t('slash.codeBlock'),
-    hint: () => t('slash.codeBlockHint'),
     keywords: ['code', 'codeblock', 'fence', '代码', '代码块', '```'],
-    // 代码块只能顶层：仅根节点、且去掉 /token 后为空壳（无子/备注/镜像）才可转
-    enabled: (node, ctx) => {
-      const loc = ctx.store.locationOf(node.id);
-      return (
-        loc?.parentId === null &&
-        node.children.length === 0 &&
-        node.note === null &&
-        node.mirror === null
-      );
-    },
+    // 任何节点都能挂代码块（顶层空壳走文档级 toCodeBlock，其余挂成节点的 note）。
+    // 已有备注的节点除外：note 只有一份，代码块会顶掉原备注。
+    enabled: (node) => node.note === null && node.mirror === null,
   },
   {
     key: 'todo',
@@ -187,17 +181,28 @@ export class SlashMenu {
     const node = this.ctx.store.findNode(this.nodeId);
     if (!node) return this.close();
 
-    if (item.key === 'code') {
-      // toCodeBlock 会整块替换该节点为代码块 RawBlock，/code 文本随节点一并消失
-      const blockId = this.ctx.newId();
-      const restId = this.ctx.newId();
-      this.ctx.focusCodeBlock(blockId);
-      this.ctx.store.dispatch({ op: 'toCodeBlock', id: node.id, lang: '', blockId, restId });
-      return this.close();
-    }
-
     // 其余条目节点保留：先删掉 /query，再转换；光标落到删除处
     const newText = node.text.slice(0, this.start) + node.text.slice(this.end);
+
+    if (item.key === 'code') {
+      const loc = this.ctx.store.locationOf(node.id);
+      // 顶层空壳 → 文档级代码块（文件里没有 bullet）；toCodeBlock 会整块替换该节点，
+      // /code 文本随节点一并消失，无需单独删
+      if (loc?.parentId === null && node.children.length === 0 && newText === '') {
+        const blockId = this.ctx.newId();
+        const restId = this.ctx.newId();
+        this.ctx.focusCodeBlock(blockId);
+        this.ctx.store.dispatch({ op: 'toCodeBlock', id: node.id, lang: '', blockId, restId });
+        return this.close();
+      }
+      // 其余：挂到该节点下（见 docs/05「代码块」）。一次 dispatchAll = 一个 undo 步
+      this.ctx.focusNoteCode(node.id);
+      this.ctx.store.dispatchAll([
+        { op: 'setText', id: node.id, text: newText },
+        { op: 'setNote', id: node.id, note: emptyFence('') },
+      ]);
+      return this.close();
+    }
     const caret: CaretPos = { nodeId: this.nodeId, field: 'text', offset: this.start };
     this.ctx.setNextCaret(caret);
     this.ctx.store.dispatch({ op: 'setText', id: node.id, text: newText });

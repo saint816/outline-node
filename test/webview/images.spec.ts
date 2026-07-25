@@ -132,14 +132,108 @@ test('顶层空根节点打 ```lang 回车 → 转成代码块并聚焦，其余
   await expect(page.locator('.node[data-id="b"]')).toHaveCount(1);
 });
 
-test('嵌套节点上打 ``` 回车不转代码块（代码块只能顶层）', async ({ page }) => {
+test('嵌套节点上打 ```ts 回车 → 代码块挂到该节点下（note 围栏块），节点保留', async ({ page }) => {
   await openOutline(page, [node('a', 'root', [node('a1', '')])]);
   await focusText(page, 'a1', 0);
-  await page.keyboard.type('```');
+  await clearPosted(page);
+  await page.keyboard.type('```ts');
   await page.keyboard.press('Enter');
 
-  // 没有代码块产生；a1 仍是普通节点（回车按普通逻辑走）
-  await expect(page.locator('.raw-block.code-block')).toHaveCount(0);
+  const area = page.locator('.node[data-id="a1"] > .node-row > .node-code textarea.code-input');
+  await expect(area).toHaveCount(1);
+  await expect(area).toBeFocused();
+  await expect(page.locator('.node[data-id="a1"] > .node-row > .node-code .code-lang')).toHaveText('ts');
+  await expect(page.locator('.node[data-id="a1"]')).toHaveCount(1); // 节点没被吃掉
+
+  // 一次 dispatchAll：setText('') + setNote(围栏) 同属一条 edit（= 一个 undo 步）。
+  // 打字那条 edit 先占住 inFlight，ack 排空队列后才轮到这条。
+  await inject(page, { type: 'ack', seq: 1, version: 2 });
+  await page.waitForFunction(
+    () =>
+      (window as never as { __posted: { type: string; ops?: { op: string }[] }[] }).__posted.some(
+        (m) => m.type === 'edit' && (m.ops ?? []).some((o) => o.op === 'setNote'),
+      ),
+    undefined,
+    { timeout: 3000 },
+  );
+  const edit = (await posted(page)).filter((m) => m.type === 'edit').at(-1) as {
+    ops: { op: string; note?: string }[];
+  };
+  expect(edit.ops.map((o) => o.op)).toEqual(['setText', 'setNote']);
+  expect(edit.ops[1].note).toBe('```ts\n```');
+});
+
+test('节点代码块：编辑经 setNote 上报（保留首尾围栏），空块 Backspace 摘掉代码块', async ({
+  page,
+}) => {
+  await openOutline(page, [{ id: 'a', text: 'root', note: '```js\nconst x = 1;\n```', children: [] }]);
+
+  const area = page.locator('.node[data-id="a"] > .node-code textarea.code-input');
+  await expect(area).toHaveValue('const x = 1;');
+  await area.fill('const y = 2;\n\nconst z = 3;'); // 含空行：parser 侧已支持（见 docs/03）
+  await page.waitForFunction(
+    () =>
+      (window as never as { __posted: { type: string; ops?: { op: string; note?: string }[] }[] }).__posted.some(
+        (m) =>
+          m.type === 'edit' &&
+          (m.ops ?? []).some(
+            (o) => o.op === 'setNote' && o.note === '```js\nconst y = 2;\n\nconst z = 3;\n```',
+          ),
+      ),
+    undefined,
+    { timeout: 3000 },
+  );
+
+  await inject(page, { type: 'ack', seq: 1, version: 2 });
+  await area.fill('');
+  await area.focus();
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('.node[data-id="a"] > .node-code')).toHaveCount(0);
+  await expect(page.locator('.node[data-id="a"]')).toHaveCount(1);
+});
+
+test('代码块节点（正文为空）：代码块排进节点行内，上方不留空行', async ({ page }) => {
+  await openOutline(page, [
+    { id: 'a', text: '', note: '```js\nconst x = 1;\n```', children: [] },
+    { id: 'b', text: '有标题', note: '```js\nconst y = 2;\n```', children: [] },
+  ]);
+
+  // 正文为空 → 块在行内；正文有字 → 块仍在行下方（那时代码是附加内容）
+  await expect(page.locator('.node[data-id="a"] > .node-row > .node-code')).toHaveCount(1);
+  await expect(page.locator('.node[data-id="b"] > .node-row > .node-code')).toHaveCount(0);
+  await expect(page.locator('.node[data-id="b"] > .node-code')).toHaveCount(1);
+
+  const geom = await page.evaluate(() => {
+    const box = (sel: string): DOMRect => document.querySelector(sel)!.getBoundingClientRect();
+    const rowA = box('.node[data-id="a"] > .node-row');
+    const codeA = box('.node[data-id="a"] .node-code');
+    return { rowH: rowA.height, codeH: codeA.height, offset: codeA.top - rowA.top };
+  });
+  // 行高就是代码块的高度（不再多出一条 22px 的空 bullet 行）
+  expect(geom.rowH - geom.codeH).toBeLessThanOrEqual(8);
+  expect(geom.offset).toBeLessThanOrEqual(6);
+});
+
+test('节点代码块内 Cmd/Ctrl+Enter 在其后新建同级节点并聚焦', async ({ page }) => {
+  await openOutline(page, [
+    { id: 'a', text: 'root', note: '```\n```', children: [] },
+    node('b', 'after'),
+  ]);
+  await page.locator('.node[data-id="a"] > .node-code textarea.code-input').focus();
+  await page.keyboard.press('ControlOrMeta+Enter');
+
+  await expect(page.locator('.node')).toHaveCount(3);
+  const info = await page.evaluate(() => {
+    const active = document.activeElement as HTMLElement | null;
+    const nodeEl = active?.closest('.node');
+    const a = document.querySelector('.node[data-id="a"]');
+    return {
+      field: active?.getAttribute('data-field'),
+      afterA: a && nodeEl ? !!(a.compareDocumentPosition(nodeEl) & Node.DOCUMENT_POSITION_FOLLOWING) : false,
+    };
+  });
+  expect(info.field).toBe('text');
+  expect(info.afterA).toBe(true);
 });
 
 test('镜像块引用 / 非图 wiki 嵌入不被当作图片', async ({ page }) => {
@@ -272,4 +366,110 @@ test('非空代码块 Backspace 不删块（只删字符）', async ({ page }) =
   await page.keyboard.press('End');
   await page.keyboard.press('Backspace');
   await expect(page.locator('.raw-block.code-block')).toHaveCount(1);
+});
+
+// ---------- 0.7.0 图片体验 ----------
+
+test('图片节点不显示源码：正文只有图片语法时 .text 透明，聚焦才现形', async ({ page }) => {
+  await openOutline(page, [node('a', `![](${PNG})`), node('b', `说明 ![](${PNG})`)]);
+
+  await expect(page.locator('.node[data-id="a"] > .node-row')).toHaveClass(/image-only/);
+  await expect(page.locator('.node[data-id="b"] > .node-row')).not.toHaveClass(/image-only/);
+
+  const opacityOf = (id: string): Promise<string> =>
+    page
+      .locator(`.node[data-id="${id}"] > .node-row > [data-field="text"]`)
+      .evaluate((el) => getComputedStyle(el).opacity);
+  expect(await opacityOf('a')).toBe('0');
+  expect(await opacityOf('b')).toBe('1');
+
+  // 图片挂进行内，不在正文上方多出一条空行；正文有字的节点仍挂在行下方
+  await expect(page.locator('.node[data-id="a"] > .node-row > .node-images')).toHaveCount(1);
+  await expect(page.locator('.node[data-id="a"] > .node-images')).toHaveCount(0);
+  await expect(page.locator('.node[data-id="b"] > .node-images')).toHaveCount(1);
+  await expect(page.locator('.node[data-id="b"] > .node-row > .node-images')).toHaveCount(0);
+
+  // 行高不再被空正文撑出额外一行：整行高度就是图片那一行
+  const rowH = await page
+    .locator('.node[data-id="a"] > .node-row')
+    .evaluate((el) => el.getBoundingClientRect().height);
+  const imgH = await page
+    .locator('.node[data-id="a"] img.node-image')
+    .evaluate((el) => el.getBoundingClientRect().height);
+  expect(rowH).toBeLessThanOrEqual(Math.max(imgH, 22) + 8);
+
+  // 聚焦即回到源码态，仍然可编辑（不能用 display:none —— 那样根本聚焦不上）
+  await focusText(page, 'a', 0);
+  expect(await opacityOf('a')).toBe('1');
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toBeFocused();
+});
+
+test('点击预览图放大：浮层出现，点浮层 / Esc 关闭', async ({ page }) => {
+  await openOutline(page, [node('a', `封面 ![](${PNG})`)]);
+
+  await page.locator('.node[data-id="a"] img.node-image').click();
+  const box = page.locator('.image-lightbox');
+  await expect(box).toBeVisible();
+  await expect(box.locator('img')).toHaveAttribute('src', PNG);
+
+  await page.keyboard.press('Escape');
+  await expect(box).toHaveCount(0);
+
+  await page.locator('.node[data-id="a"] img.node-image').click();
+  await page.locator('.image-lightbox').click();
+  await expect(page.locator('.image-lightbox')).toHaveCount(0);
+});
+
+test('粘贴图片落到 <文件名>/assets/ 下（host 注入的 data-assets-dir）', async ({ page }) => {
+  await openOutline(page, [node('a', '')]);
+  await page.evaluate(() => {
+    document.documentElement.dataset.assetsDir = 'my-note/assets';
+  });
+  await focusText(page, 'a', 0);
+
+  await page.evaluate((b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], 'clip.png', { type: 'image/png' }));
+    document
+      .querySelector('.node[data-id="a"] [data-field="text"]')!
+      .dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, PNG_B64);
+
+  await page.waitForFunction(
+    () =>
+      (window as never as { __posted: { type: string; name?: string }[] }).__posted.some(
+        (m) => m.type === 'saveImage' && /^my-note\/assets\/pasted-.*\.png$/.test(m.name ?? ''),
+      ),
+    undefined,
+    { timeout: 3000 },
+  );
+  await expect(
+    page.locator('.node[data-id="a"] > .node-row > [data-field="text"]'),
+  ).toContainText('![[my-note/assets/pasted-');
+});
+
+test('zoom 根标题与子节点圆点对齐（不贴最左、也不比子节点靠右）', async ({ page }) => {
+  await openOutline(page, [node('a', '一级节点', [node('a1', '测试')])]);
+  await page.locator('.node[data-id="a"] > .node-row > .bullet').click(); // zoom in
+
+  const zoomed = page.locator('.list-block.zoomed');
+  await expect(zoomed).toHaveCount(1);
+
+  const geom = await page.evaluate(() => {
+    const title = document.querySelector('.zoomed > .node > .node-row > [data-field="text"]')!;
+    const childRow = document.querySelector('.zoomed > .node > .children > .node > .node-row')!;
+    const childBullet = childRow.querySelector('.bullet')!;
+    const pad = parseFloat(getComputedStyle(title).paddingLeft);
+    return {
+      titleGlyph: title.getBoundingClientRect().left + pad,
+      // 圆点由 .bullet::before 画出，left:4px
+      dot: childBullet.getBoundingClientRect().left + 4,
+      rowLeft: childRow.getBoundingClientRect().left,
+    };
+  });
+  // 标题首字对齐子节点圆点左缘
+  expect(Math.abs(geom.titleGlyph - geom.dot)).toBeLessThanOrEqual(2);
+  // 且确实缩进了：不贴容器最左
+  expect(geom.titleGlyph - geom.rowLeft).toBeGreaterThan(8);
 });

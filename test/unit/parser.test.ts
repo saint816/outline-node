@@ -119,6 +119,31 @@ describe('parseOutline — note 续行', () => {
     expect(doc.blocks.map((b) => b.kind)).toEqual(['list', 'raw']);
     expect(rawBlock(doc, 1).lines).toEqual([' 续行太浅']);
   });
+
+  // note 里的围栏未闭合时空行不终止续行：否则「节点下挂代码块」一有空行就在重解析时
+  // 被截断，模型拆成两半（文件字节不丢，但 UI 上代码块断开）。见 docs/03。
+  it('note 内未闭合围栏里的空行仍属于 note，列表不被拆开', () => {
+    const src = '- 顶层\n  - 子\n    ```js\n    const a = 1;\n\n    const b = 2;\n    ```\n  - 后面\n';
+    const doc = parseOutline(src, PARSE_OPTS);
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['list']);
+    const nodes = flatten(doc).map((e) => e.node);
+    expect(nodes.map((n) => n.text)).toEqual(['顶层', '子', '后面']);
+    expect(nodes[1].note).toBe('```js\nconst a = 1;\n\nconst b = 2;\n```');
+  });
+
+  it('围栏闭合之后空行照旧终止 note', () => {
+    const doc = parseOutline('- a\n  ```\n  x\n  ```\n\n  尾巴\n', PARSE_OPTS);
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['list', 'raw']);
+    expect(flatten(doc)[0].node.note).toBe('```\nx\n```');
+    expect(rawBlock(doc, 1).lines).toEqual(['', '  尾巴']);
+  });
+
+  it('未闭合围栏不吞掉后面不缩进的内容', () => {
+    const doc = parseOutline('- a\n  ```js\n  x\n\n## 标题\n', PARSE_OPTS);
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['list', 'raw']);
+    expect(flatten(doc)[0].node.note).toBe('```js\nx\n');
+    expect(rawBlock(doc, 1).lines).toEqual(['## 标题']);
+  });
 });
 
 describe('parseOutline — 块边界', () => {

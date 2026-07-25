@@ -4,7 +4,8 @@ import type { EditorConfig } from '../shared/protocol.js';
 import type { DocumentSession } from './documentSession.js';
 import { FoldingStore } from './foldingStore.js';
 import { BookmarkStore } from './bookmarkStore.js';
-import { OutlineEditorProvider } from './outlineEditorProvider.js';
+import { OutlineEditorProvider, assetsDirFor } from './outlineEditorProvider.js';
+import { cleanupOrphanImages } from './imageCleanup.js';
 
 const VIEW_TYPES = ['outlineNode.outline', 'outlineNode.outlineOptional'] as const;
 
@@ -48,6 +49,18 @@ export function activate(context: vscode.ExtensionContext): OutlineNodeApi {
     ),
     // 'default' = VS Code 内置文本编辑器
     vscode.commands.registerCommand('outlineNode.openAsText', reopenWith('default')),
+    // 清理不再被引用的粘贴图片（显式命令 + 确认 + 废纸篓，见 imageCleanup.ts 顶部注释）
+    vscode.commands.registerCommand('outlineNode.cleanupImages', async (resource?: vscode.Uri) => {
+      const uri = resource ?? activeDocumentUri();
+      if (!uri) {
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t('OutlineNode: No active Markdown file.'),
+        );
+        return;
+      }
+      const document = await vscode.workspace.openTextDocument(uri);
+      await cleanupOrphanImages(document, assetsDirFor(uri));
+    }),
   );
 
   return { getSession: (uri) => provider.sessions.get(uri) };

@@ -3,6 +3,7 @@ import './styles.css';
 import { nanoid } from 'nanoid';
 import { asH2W, type H2W, type W2H } from '../shared/protocol.js';
 import { activeEditable, restoreCaret, saveCaret, type CaretPos } from './caret.js';
+import { fenceLinesFrom } from './codeFence.js';
 import { ime, installImeGuard } from './ime.js';
 import { handleKeydown } from './keymap.js';
 import { t } from './i18n.js';
@@ -16,7 +17,10 @@ import { Breadcrumb } from './zoom.js';
 import { SidebarView } from './sidebar.js';
 import { Toolbar } from './toolbar.js';
 import { HelpOverlay } from './help.js';
+import { closeLightbox, handleImageClick, isLightboxOpen } from './lightbox.js';
+import { isMac } from './platform.js';
 import { SlashMenu } from './slashMenu.js';
+import { NodeSelection, handleSelectionKeydown } from './selection.js';
 import { ZoomHistory } from './zoomHistory.js';
 
 declare function acquireVsCodeApi(): {
@@ -39,6 +43,8 @@ const root = document.getElementById('outline-root') as HTMLElement;
 const send = (msg: W2H): void => vscode.postMessage(msg);
 const store = new Store(send);
 const renderer = new Renderer(root);
+// 节点多选（Shift+↑↓ / Shift+点击）：纯 UI 状态，批量 op 复用既有 op（见 selection.ts）
+const selection = new NodeSelection(store, root);
 
 // zoom 前进/后退历史：所有「记录型」导航都走 navigate()，back/forward 只重放。
 const zoomHistory = new ZoomHistory((id) => store.zoomTo(id));
@@ -82,8 +88,14 @@ app.append(sidebar.el, mainCol);
 document.body.append(app);
 
 let nextCaret: CaretPos | null = null;
+/** patch 之后把光标放到这里（结构 op 前记录，见 docs/04）。 */
+function setNextCaret(pos: CaretPos): void {
+  nextCaret = pos;
+}
 /** 下一帧渲染后把焦点放进这个代码块的 textarea（toCodeBlock 后用）。 */
 let nextCodeFocus: string | null = null;
+/** 同上，但目标是节点代码块（note 恰为围栏块）的 textarea，按节点 id 定位。 */
+let nextNoteCodeFocus: string | null = null;
 let ready = false;
 const EMPTY_FOLDS: ReadonlySet<string> = new Set<string>();
 
@@ -91,12 +103,11 @@ const EMPTY_FOLDS: ReadonlySet<string> = new Set<string>();
 const slashMenu = new SlashMenu({
   store,
   newId: () => nanoid(),
-  setNextCaret: (pos) => {
-    nextCaret = pos;
-  },
+  setNextCaret,
   focusCodeBlock: (blockId) => {
     nextCodeFocus = blockId;
   },
+  focusNoteCode,
 });
 
 // ---------- 渲染 ----------
@@ -115,6 +126,7 @@ function render(): void {
     },
   );
   applyFilters(root, blocks, store.query, store.hideCompleted);
+  selection.syncHighlight(); // patch 重建过的节点重新打上 .selected（无选区时零成本）
   breadcrumb.update(store.zoomTrail());
   // 侧栏/工具条是「外壳」，不在大纲增量 patch 的关键路径上：挪到 macrotask 里合并更新，
   // 大文件外部 refresh 的 patch 时延只由 renderer.patch 决定（护住 50ms 红线，见 docs/07）。
@@ -127,6 +139,11 @@ function render(): void {
     );
     nextCodeFocus = null;
     area?.focus();
+  }
+  if (nextNoteCodeFocus !== null) {
+    // 直接查一次就放弃：不回填 nextNoteCodeFocus，免得目标一直不出现时每帧重试、误抢焦点
+    noteCodeAreaOf(nextNoteCodeFocus)?.focus();
+    nextNoteCodeFocus = null;
   }
   saveViewState();
   // 首帧分片：剩下的节点下一帧继续挂（见 docs/07）
@@ -267,10 +284,15 @@ function applyRefresh(msg: Extract<H2W, { type: 'refresh' }>): void {
 root.addEventListener('input', (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement) || !target.dataset.field) return;
+  selection.clear(); // 开始打字 = 退出多选（无选区时是空操作）
   // 组合期间不发 setText（红线 4）
   if (ime.composing) return;
   if (target.dataset.field === 'code') {
     commitCodeBlock(target);
+    return;
+  }
+  if (target.dataset.field === 'noteCode') {
+    commitNoteCode(target);
     return;
   }
   commitFieldText(target);
@@ -295,14 +317,24 @@ function commitCodeBlock(target: HTMLElement): void {
   const block = target.closest<HTMLElement>('.raw-block');
   const blockId = block?.dataset.blockId;
   if (!block || !blockId) return;
-  // textarea 随内容增高，避免加行时看不到
-  target.style.height = 'auto';
-  target.style.height = `${target.scrollHeight}px`;
-  const open = block.dataset.codeOpen ?? '```';
-  const body = target.value.split('\n');
-  const lines =
-    'codeClose' in block.dataset ? [open, ...body, block.dataset.codeClose as string] : [open, ...body];
-  store.setRawBlockLines(blockId, lines);
+  autoGrow(target);
+  store.setRawBlockLines(blockId, fenceLinesFrom(block, target.value));
+}
+
+/** 节点代码块（note 恰为围栏块）改动 → 重建整块行 → setNote（热路径，同 setNodeText）。 */
+function commitNoteCode(target: HTMLElement): void {
+  if (!(target instanceof HTMLTextAreaElement)) return;
+  const block = target.closest<HTMLElement>('.node-code');
+  const id = target.closest<HTMLElement>('.node')?.dataset.id;
+  if (!block || !id) return;
+  autoGrow(target);
+  store.setNodeNote(id, fenceLinesFrom(block, target.value).join('\n'));
+}
+
+/** textarea 随内容增高，避免加行时看不到。 */
+function autoGrow(area: HTMLTextAreaElement): void {
+  area.style.height = 'auto';
+  area.style.height = `${area.scrollHeight}px`;
 }
 
 // undo 三道闸之一：封死浏览器原生 undo 栈的一切入口（含右键菜单）
@@ -314,16 +346,17 @@ root.addEventListener('beforeinput', (event) => {
 root.addEventListener('keydown', (event) => {
   // 代码块 textarea 的出口手势（keymap 对 textarea 不生效，saveCaret 返回 null）
   const target = event.target;
-  if (target instanceof HTMLTextAreaElement && target.dataset.field === 'code') {
-    if (handleCodeBlockKeydown(event, target)) return;
+  if (target instanceof HTMLTextAreaElement) {
+    if (target.dataset.field === 'code' && handleCodeBlockKeydown(event, target)) return;
+    if (target.dataset.field === 'noteCode' && handleNoteCodeKeydown(event, target)) return;
   }
   // 斜杠菜单激活时优先吃掉导航键（↑↓/Enter/Tab/Esc），keymap 不再处理
   if (event.key !== 'Process' && !event.isComposing && slashMenu.handleKeydown(event)) return;
+  // 多选：Shift+↑↓ 进入/扩选；选中态下 Tab/Alt+↑↓/Cmd+Enter/Backspace 批量生效
+  if (handleSelectionKeydown(event, { selection, setNextCaret })) return;
   handleKeydown(event, {
     store,
-    setNextCaret: (pos) => {
-      nextCaret = pos;
-    },
+    setNextCaret,
     requestUndo: () => send({ type: 'requestUndo' }),
     requestRedo: () => send({ type: 'requestRedo' }),
     newId: () => nanoid(),
@@ -333,6 +366,7 @@ root.addEventListener('keydown', (event) => {
     focusCodeBlock: (blockId) => {
       nextCodeFocus = blockId;
     },
+    focusNoteCode,
   });
 });
 
@@ -365,6 +399,58 @@ function handleCodeBlockKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): bo
   return false;
 }
 
+/**
+ * 节点代码块（note 恰为围栏块）的出口手势，与顶层代码块对齐：
+ * - Cmd/Ctrl+Enter：在该节点之后新建一个同级节点并聚焦；
+ * - 空代码块上 Backspace/Delete：`setNote(null)` 去掉代码块，光标回到该节点正文末尾。
+ */
+function handleNoteCodeKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): boolean {
+  const id = area.closest<HTMLElement>('.node')?.dataset.id;
+  if (id === undefined) return false;
+
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    const location = store.locationOf(id);
+    if (!location) return false;
+    const newId = nanoid();
+    setNextCaret({ nodeId: newId, field: 'text', offset: 0 });
+    store.dispatch({
+      op: 'insertSubtree',
+      parentId: location.parentId,
+      index: location.index + 1,
+      nodes: [
+        { id: newId, text: '', checked: null, note: null, blockId: null, mirror: null, children: [], raw: null },
+      ],
+    });
+    return true;
+  }
+
+  if ((e.key === 'Backspace' || e.key === 'Delete') && area.value === '') {
+    e.preventDefault();
+    const node = store.findNode(id);
+    setNextCaret({ nodeId: id, field: 'text', offset: node?.text.length ?? 0 });
+    store.dispatch({ op: 'setNote', id, note: null });
+    return true;
+  }
+  return false;
+}
+
+function noteCodeAreaOf(nodeId: string): HTMLTextAreaElement | null {
+  // 代码块可能挂在行内（正文为空的代码块节点）或行下方（正文有字），两处都要找
+  const id = nodeId.replace(/["\\]/g, '\\$&');
+  return root.querySelector<HTMLTextAreaElement>(
+    `.node[data-id="${id}"] > .node-code textarea.code-input,` +
+      `.node[data-id="${id}"] > .node-row > .node-code textarea.code-input`,
+  );
+}
+
+/** 聚焦该节点的代码块 textarea；元素还没建出来（刚发出 setNote）就留到下一帧。 */
+function focusNoteCode(nodeId: string): void {
+  const area = noteCodeAreaOf(nodeId);
+  if (area) area.focus();
+  else nextNoteCodeFocus = nodeId;
+}
+
 /** raw-block 相邻的 top-level 节点 id：优先前一个，否则后一个（删代码块后焦点落点）。 */
 function adjacentNodeId(blockEl: HTMLElement): string | null {
   const pick = (dir: 'previousElementSibling' | 'nextElementSibling'): string | null => {
@@ -375,15 +461,33 @@ function adjacentNodeId(blockEl: HTMLElement): string | null {
   return pick('previousElementSibling') ?? pick('nextElementSibling');
 }
 
+/**
+ * 隐藏 / 显示已完成的键位。webview 的按键会被转发给工作台做快捷键解析，所以只能挑
+ * VS Code 没占用的组合——已被实机否掉两轮：
+ *   `Cmd+O`      → VS Code「打开文件」
+ *   `Cmd+Alt+O`  → Remote 扩展「Open Remote Window」
+ * 现在按平台分：mac 用 `Ctrl+O`（mac 版 VS Code 未绑定）；Windows/Linux 上 `Ctrl+O`
+ * 恰恰是「打开文件」，退回 `Ctrl+Alt+O`。用 `e.code` 而非 `e.key` 判定，免受 Option
+ * 改字符 / 键盘布局影响。
+ */
+export function isHideCompletedKey(e: KeyboardEvent): boolean {
+  if (e.code !== 'KeyO' || e.metaKey || e.shiftKey) return false;
+  return isMac() ? e.ctrlKey && !e.altKey : e.ctrlKey && e.altKey;
+}
+
 // 帮助浮层：? 开关（焦点不在可编辑元素里时，避免吞掉输入的「?」），Esc 关闭。
-// 隐藏已完成（Cmd/Ctrl+O）也挂在 document 上——隐藏后被隐藏节点的焦点会掉到 body，
-// root 级监听收不到第二次按键（BUG-002 焦点陷阱）。document 级则焦点在哪都能触发。
+// 隐藏已完成也挂在 document 上——隐藏后被隐藏节点的焦点会掉到 body，root 级监听收不到
+// 第二次按键（BUG-002 焦点陷阱）。document 级则焦点在哪都能触发。
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && isLightboxOpen()) {
+    closeLightbox();
+    return;
+  }
   if (event.key === 'Escape' && help.isOpen()) {
     help.close();
     return;
   }
-  if ((event.metaKey || event.ctrlKey) && (event.key === 'o' || event.key === 'O')) {
+  if (isHideCompletedKey(event)) {
     event.preventDefault();
     toggleHideCompletedWithFocus();
     return;
@@ -416,10 +520,32 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA';
 }
 
+// 多选的鼠标入口挂在 document 上：Shift+点击另一个节点 → 选中区间；其余任何位置的
+// 普通按下 → 退出多选（包括点侧栏 / 工具条，否则焦点走了高亮还留着）。
+document.addEventListener('mousedown', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  const id = target?.closest<HTMLElement>('.node')?.dataset.id;
+  if (event.shiftKey && id !== undefined && root.contains(target)) {
+    const anchor = selection.anchor ?? saveCaret()?.nodeId ?? null;
+    // 同一节点内的 Shift+点击是「扩文本选区」，不抢；镜像视图不参与多选
+    if (anchor !== null && anchor !== id && !anchor.includes('/') && !id.includes('/')) {
+      event.preventDefault(); // 保住焦点，后续键盘批量操作仍能落到 root 的监听器
+      selection.setRange(anchor, id);
+      return;
+    }
+  }
+  selection.clear();
+});
+
 // 点击交互（事件委托，不给每节点绑监听器，见 docs/07）
 root.addEventListener('click', (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+  if (handleImageClick(target)) {
+    event.preventDefault(); // 点图 = 放大预览，不落焦点、不 zoom
+    return;
+  }
+  if (event.shiftKey) return; // Shift+点击归多选（上面的 mousedown），别顺手 zoom / 折叠
   const id = target.closest<HTMLElement>('.node')?.dataset.id;
   if (!id) return;
   if (target.closest('.toggle')) {
@@ -540,9 +666,8 @@ document.addEventListener('visibilitychange', () => {
 installDragAndDrop(root, store);
 installClipboard(root, {
   store,
-  setNextCaret: (pos) => {
-    nextCaret = pos;
-  },
+  selection,
+  setNextCaret,
   saveImage: (name, dataBase64) => send({ type: 'saveImage', name, dataBase64 }),
 });
 

@@ -40,6 +40,8 @@ interface ListContext {
   noteLines: string[];
   /** 第一条 note 行的缩进串，用于统一剥离，保留 note 内部相对缩进 */
   noteBaseIndent: string | null;
+  /** note 内未闭合围栏的围栏串（null = 不在围栏内）；空行是否终止 note 由它决定 */
+  noteFence: string | null;
 }
 
 export function parseOutline(text: string, opts: { defaultIndent: IndentUnit }): OutlineDoc {
@@ -140,7 +142,15 @@ function parseBlocks(lines: string[], unit: IndentUnit): Block[] {
     if (item) {
       flushRaw();
       if (list === null) {
-        list = { roots: [], stack: [], lastNode: null, lastContentCol: 0, noteLines: [], noteBaseIndent: null };
+        list = {
+          roots: [],
+          stack: [],
+          lastNode: null,
+          lastContentCol: 0,
+          noteLines: [],
+          noteBaseIndent: null,
+          noteFence: null,
+        };
       }
       appendListItem(list, line, item, unit);
       continue;
@@ -155,18 +165,36 @@ function parseBlocks(lines: string[], unit: IndentUnit): Block[] {
   return blocks;
 }
 
-/** note 续行判定：非空、有前导空白、宽度 ≥ 所属列表项的内容列、且本身不是列表项。 */
+/**
+ * note 续行判定：非空、有前导空白、宽度 ≥ 所属列表项的内容列、且本身不是列表项。
+ *
+ * 例外——**note 里处于未闭合围栏内时，空行也是续行**：代码正文里空行极常见，若按
+ * 普通空行终止 note，`- 节点` + 缩进围栏代码块会在重新解析时从空行处截断，模型被拆成
+ * 两半（文件字节不丢，但 UI 上代码块断开）。不缩进的行仍然照旧终止，未闭合围栏因此
+ * 不会吞掉后面的标题/正文（见 docs/03）。
+ */
 function tryAppendNote(list: ListContext, line: string, unit: IndentUnit): boolean {
-  if (BLANK_RE.test(line)) return false;
-  const indent = leadingWhitespace(line);
-  if (indent.length === 0) return false;
-  if (LIST_ITEM_RE.test(line)) return false;
-  if (indentWidth(indent, unit) < list.lastContentCol) return false;
+  const blank = BLANK_RE.test(line);
+  if (blank && list.noteFence === null) return false;
+  if (!blank) {
+    const indent = leadingWhitespace(line);
+    if (indent.length === 0) return false;
+    if (LIST_ITEM_RE.test(line)) return false;
+    if (indentWidth(indent, unit) < list.lastContentCol) return false;
+    if (list.noteBaseIndent === null) list.noteBaseIndent = indent;
+  }
 
   const node = list.lastNode!;
-  if (list.noteBaseIndent === null) list.noteBaseIndent = indent;
-  const base = list.noteBaseIndent;
+  const base = list.noteBaseIndent ?? '';
   const stripped = line.startsWith(base) ? line.slice(base.length) : line.trimStart();
+
+  // 围栏状态跟着已剥离缩进的行走（与顶层围栏同一套判定）
+  if (list.noteFence === null) {
+    const open = FENCE_RE.exec(stripped);
+    if (open) list.noteFence = open[1];
+  } else if (isFenceClose(stripped, list.noteFence)) {
+    list.noteFence = null;
+  }
 
   list.noteLines.push(stripped);
   node.note = list.noteLines.join('\n');
@@ -229,6 +257,7 @@ function appendListItem(
   list.lastContentCol = width + marker.length + 1; // marker 长度 + 其后的空格
   list.noteLines = [];
   list.noteBaseIndent = null;
+  list.noteFence = null;
 }
 
 function leadingWhitespace(line: string): string {

@@ -1,5 +1,7 @@
 {
   "config.defaultIndent.description": "新文件或无法从内容检测缩进时使用的缩进单位",
   "command.openAsOutline.title": "以大纲方式打开",
-  "command.openAsText.title": "以 Markdown 文本方式打开"
+  "command.openAsText.title": "以 Markdown 文本方式打开",
+  "command.cleanupImages.title": "清理未被引用的粘贴图片",
+  "config.cleanupUnusedImagesOnSave.description": "保存时把已不被引用的粘贴图片（<文件名>/assets/ 里的 pasted-*）移到废纸篓"
 }

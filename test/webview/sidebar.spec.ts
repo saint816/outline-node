@@ -150,7 +150,7 @@ test('星标：进入 Starred 区、节流上报 saveBookmarks，reopen 后按 n
   await expect(page.locator('.sidebar-section', { hasText: 'Starred' })).toBeVisible();
 });
 
-test('Cmd/Ctrl+O 隐藏已完成节点（连整棵子树），再按恢复', async ({ page }) => {
+test('Ctrl+O 隐藏已完成节点（连整棵子树），再按恢复', async ({ page }) => {
   await openOutline(page, [node('a', 'Done', [node('a1', 'child')]), node('b', 'Todo')]);
 
   await focusText(page, 'a', 0);
@@ -167,7 +167,7 @@ test('Cmd/Ctrl+O 隐藏已完成节点（连整棵子树），再按恢复', asy
   await expect(page.locator('.node[data-id="a"]')).toBeVisible();
 });
 
-test('焦点在完成节点上按 Cmd/Ctrl+O：隐藏后焦点迁到可见节点，再按能恢复（BUG-002）', async ({
+test('焦点在完成节点上按 Ctrl+O：隐藏后焦点迁到可见节点，再按能恢复（BUG-002）', async ({
   page,
 }) => {
   await openOutline(page, [node('a', 'Done'), node('b', 'Todo')]);
@@ -267,4 +267,24 @@ test('侧栏：节点文本清空后 label 回落到 (empty node) 占位', async
   await page.keyboard.press('Delete');
 
   await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', '(empty node)']);
+});
+
+// 键位随平台变（见 webview/platform.ts）：mac 用 Ctrl+O（VS Code 未占），
+// Windows/Linux 上 Ctrl+O 是「打开文件」，退回 Ctrl+Alt+O。
+test('非 mac 平台：隐藏已完成走 Ctrl+Alt+O，裸 Ctrl+O 不触发', async ({ page }) => {
+  await openOutline(page, [node('a', 'Done'), node('b', 'Todo')]);
+  await page.evaluate(() => {
+    document.documentElement.dataset.platform = 'other';
+  });
+
+  await focusText(page, 'a', 0);
+  await page.keyboard.press('Control+Enter');
+  await expect(page.locator('.node[data-id="a"] > .node-row')).toHaveClass(/checked/);
+
+  await focusText(page, 'b', 0);
+  await page.keyboard.press('Control+o'); // 该平台上这是「打开文件」，插件不该抢
+  await expect(page.locator('.node[data-id="a"]')).toBeVisible();
+
+  await page.keyboard.press('Control+Alt+o');
+  await expect(page.locator('.node[data-id="a"]')).toBeHidden();
 });

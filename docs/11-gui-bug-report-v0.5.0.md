@@ -20,7 +20,7 @@
 | # | 问题 | 状态 | 处理 |
 |---|---|---|---|
 | BUG-001 | Undo 跨多步回退 | **不复现（已核实）** | 集成测试证明：独立 edit 消息各自成一个 undo step，间隔操作（含报告主场景）单次 undo 只退最后一个。唯一会一起退的是 webview 在 ack 往返前把多 op 批进同一条消息——是单-in-flight 同步协议的固有结果，非缺陷。逐-op undo 需改 echo/ack 协议且会拆散逻辑动作，暂不做。 |
-| BUG-002 | Cmd+O 焦点陷阱 | **已修** | Cmd/Ctrl+O 提到 document 级监听（焦点在哪都触发）+ 隐藏后焦点迁移到最近可见节点。 |
+| BUG-002 | Cmd+O 焦点陷阱 | **已修** | Cmd/Ctrl+O 提到 document 级监听（焦点在哪都触发）+ 隐藏后焦点迁移到最近可见节点。（0.7.0 起键位改为 `Cmd/Ctrl+Alt+O`，避开 VS Code 的「打开文件」，见 docs/05。） |
 | BUG-003 | 末尾代码块后无法建节点 | **已修** | 新增 `insertRootAfterBlock` op；代码块 textarea 内 **Cmd/Ctrl+Enter** 在其后新建顶层节点并聚焦。 |
 | BUG-004 | 代码块无法删除 | **已修** | 新增 `deleteRawBlock` op（只删围栏块、删后合并相邻 ListBlock）；**空代码块上 Backspace/Delete** 删整块。 |
 | BUG-005 | 粘贴图片不显示 | **已修** | 两层：0.5.0 已修插入（`execCommand` → store dispatch）；本版补渲染层——预览 `<img>` 早于写盘请求会 404 被缓存、`syncImages` 又因 src 未变不重建，`imageSaved` 时给匹配 img 打 cache-bust 强制重载。 |

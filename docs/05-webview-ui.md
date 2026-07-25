@@ -81,32 +81,86 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 | `Backspace`（offset 0） | 有前驱 → `mergeWithPrevious`（dispatch 前记录 junction offset 恢复光标）；无前驱（首节点）且为空节点 → `delete` 该节点、光标移到下一个可见节点（Workflowy 语义）；无前驱且非空 → no-op（不丢正文）；文档仅剩一个节点时不删 |
 | `Alt+↑` / `Alt+↓` | `moveUp` / `moveDown` |
 | `Cmd/Ctrl+Enter` | `toggleChecked` |
-| ` ``` ` / ` ```lang ` + `Enter` | 空的顶层根节点 → 顶层代码块（`toCodeBlock`，见 02/04）；非顶层节点上不触发，`Enter` 按普通逻辑走 |
+| ` ``` ` / ` ```lang ` + `Enter` | 空的顶层根节点 → 文档级代码块（`toCodeBlock`，见 02/04）；**其余节点 → 代码块挂到该节点下**（`setText('')` + `setNote(围栏)`，一次 `dispatchAll`） |
 | `/`（词首） | 打开斜杠插入菜单（见下「斜杠插入菜单」）：Code / To-do / 编号 |
 | `Alt+→` / `Alt+←` | zoom in 当前节点 / zoom out 一级 |
 | `Cmd/Ctrl+.` | 折叠/展开当前节点 |
 | `↑` / `↓`（在首/末行） | 光标移到可见前/后节点（列尽量保持） |
+| `Shift+↑` / `Shift+↓`（在首/末行） | 进入 / 扩展节点多选（见下「多选」） |
 | `Cmd/Ctrl+Z` (+Shift) | undo/redo 转发（见上） |
 | `Cmd/Ctrl+F` | 聚焦插件内搜索框（过滤式搜索，不用 VS Code find widget） |
-| `Esc` | 清除搜索 / 取消拖拽 |
+| `Ctrl+O`（mac）/ `Ctrl+Alt+O`（其他） | 隐藏 / 显示已完成。webview 的按键会被转发给工作台做快捷键解析，只能挑 VS Code 没占的组合——已被实机否掉两轮：`Cmd+O` = 「打开文件」、`Cmd+Alt+O` = Remote 扩展「Open Remote Window」。Windows/Linux 上 `Ctrl+O` 才是「打开文件」，故分平台。平台由 host 注入 `<html data-platform>`（**不嗅探 UA**：Playwright 的 Chromium 在 macOS 上报 Windows UA）。判定用 `e.code === 'KeyO'`，不受 Option 改字符 / 布局影响；监听挂 document 级（BUG-002） |
+| `Esc` | 退出多选 / 清除搜索 / 取消拖拽 |
 
 结构 op dispatch 前一律先 flush 待发的 setText（见 04 防抖策略）。
+
+## 多选（selection.ts）
+
+Workflowy 式的节点多选。**纯 webview UI 状态**：不写文件、不改协议、不新增 op。
+
+- **进入**：`Shift+↑/↓` —— 判据与 `↑/↓` 跨节点移动相同（在首/末视觉行才接管），节点内还能扩文本选区时让给浏览器；或 `Shift+点击`另一个节点选中区间（同节点内的 Shift+点击仍是扩文本选区）。
+- **退出**：`Esc`、打字（`input`）、任意普通鼠标按下（挂 document 级，点侧栏/工具条也退出）、`Cmd/Ctrl+Z`（undo 会重塑整棵树）。
+- **选区语义**：锚点与活动端在 `store.visibleRows()` 先序里的闭区间，再**归一到子树根**（祖先已入选则后代被吸收）。批量 op 只作用在根上，子树自然跟着走。
+- **批量操作**（复用既有 op，顺序有讲究）：
+
+  | 按键 | op | 顺序 |
+  |---|---|---|
+  | `Tab` | `indent` × n | 文档先序 |
+  | `Shift+Tab` | `outdent` × n | **逆序**（outdent 插到原父之后，正序会颠倒相对顺序） |
+  | `Alt+↑` | `moveUp` × n | 文档先序 |
+  | `Alt+↓` | `moveDown` × n | **逆序**（否则靠前的一项先跨过靠后的） |
+  | `Cmd/Ctrl+Enter` | `setChecked` × n | 全已完成 → 全取消，否则全标完成 |
+  | `Backspace` / `Delete` | `delete` × n | 光标落到选区前一行，无前一行则落到选区后第一行 |
+  | `Cmd/Ctrl+C` / `X` | —（cut 追加 `delete` × n） | 见剪贴板 |
+
+  一次批量走 `store.dispatchAll(ops)` → **一条 edit 消息** = host 一次 `applyEdit` = **一个 undo 步**（见 04）。no-op 的 op 不入队（如首个兄弟的 `indent`）。
+- **高亮**：只给子树根打 `.selected`，CSS `.node.selected .node-row` 让整棵子树跟着高亮——与批量 op 的作用范围一致。只增删 class、不动 DOM；无选区时 `syncHighlight` 立即返回（护住 refresh 红线，见 07）。
+- **限制**：镜像视图（复合 id `mirrorId/originalId`）不参与多选——那里的行不在数据层 `visibleRows` 里，区间语义无从定义。鼠标拖选（按住拖过多行）暂不支持。
+
+### zoom 根标题的对齐
+
+zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`bullet` 占位但隐藏（`visibility:hidden`）——标题首字落在 `16 + 4(gap) + 2(padding) = 22px`，正好是子节点圆点的左缘（`toggle 14 + gap 4 + ::before left 4`）。两个都 `display:none` 会贴到容器最左，两个都 `visibility:hidden` 又比子节点还靠右，两版都被实机否掉过。
 
 ## 剪贴板（clipboard.ts）
 
 - **paste**：`preventDefault()`；先看剪贴板里有没有图片：
-  - **图片** → 生成唯一文件名，`execCommand('insertText')` 在光标处插入 `![[name]]`（走和手打一致的路径），并发 `saveImage{name, dataBase64}` 让 host 写盘（见 04）；
+  - **图片** → 生成唯一文件名，经 store 在光标处插入 `![[<assetsDir>/name]]`（**不用 `execCommand`**：它在 VS Code webview 里对 `plaintext-only` 静默失败，图写了盘正文没引用，真机复现过），并发 `saveImage{name, dataBase64}` 让 host 写盘（见 04）。落盘目录是 host 注入的 `data-assets-dir` = `<文件名去扩展名>/assets`，不再撒在笔记同级目录；
   - 否则取 `clipboardData.getData('text/plain')`：多行且含列表语法 → 复用 **core parser** 解析出子树发 `insertSubtree`；多行无列表语法 → 按行拆为兄弟节点发 `insertSubtree`；单行 → 插入 caret 处走 `setText`。
-- **copy/cut**：选中节点（或光标所在节点整棵子树）序列化为 markdown 列表写入剪贴板（复用 core serializer），与外界互粘闭环；cut 追加 `delete` op。
+- **copy/cut**：**多选优先**——选区非空时把选中的全部子树序列化成一份 markdown 列表（cut 再整段 `delete`）；否则退回单节点：选中文本走浏览器默认，光标所在节点则序列化整棵子树（复用 core serializer），与外界互粘闭环；cut 追加 `delete` op。
+
+## 图片（images.ts + lightbox.ts）
+
+- **预览**：正文里的 `![alt](path)` / `![[file.ext]]` 渲染成 `.node-images > img.node-image`，源码仍在可编辑正文里。相对路径按 `data-doc-base`（host 注入）改写成 `vscode-webview://`。
+- **块内容进节点行**（图片 / 代码块共用的规矩）：一个节点的内容如果**只有**这个块（正文为空或只有图片语法），块就挂进 `.node-row` 里；否则挂在行下方。否则块上面会多出一条只有 bullet 的空行（实机反馈两次）。
+- **图片节点**：正文除图片语法外没有别的内容时（`isImageOnly`），`.node-row` 加 `.image-only`：
+  - 预览**挂进节点行内**（`syncImages` 把 `.node-images` 插到 `.text` 之前），图片就是这一行的内容，上方不再多出一条空行；正文有字的节点仍挂在行下方。
+  - 未聚焦时 `.text` 透明。刻意**不用 `display:none`**：那样 `restoreCaret` 与点击都聚焦不上，节点会变成改不动的死块。透明的正文仍是图片右侧的点击区，点它即回源码态。
+  - 必须配 `white-space: nowrap; overflow: hidden`——**透明 ≠ 不占位**，长 data: URI 源码会换行把整行撑到几十像素高（实机看到的怪空行就是它）。
+- **放大预览**：点 `img.node-image` → `openLightbox`（全屏浮层，点浮层任意处 / `Esc` 关闭）。纯渲染层，不发消息。
+- **孤儿清理**：**不挂在「删节点」上**（删节点可 undo、删文件不可，一耦合 undo 回来就是「正文在、图没了」）。两条入口，都只在本文档自己的 assets 目录里动手：
+  - **保存时自动**（`outlineNode.cleanupUnusedImagesOnSave`，默认开）：只删扩展自己生成的 `pasted-*` 孤儿，移废纸篓，状态栏提示 4 秒。延到保存 = 给 undo 留窗口（撤销后再保存，引用回来了就不算孤儿）。
+  - **显式命令** `outlineNode.cleanupImages`：该目录下所有未被引用的图片，带确认弹窗。
+  - 已知局限：判据是「本文档是否引用」，所以从别的笔记引用本文档 assets 里的图会被当成孤儿。
 
 ## 代码块编辑（nodeView.ts + main.ts 委托）
 
 围栏代码块 RawBlock 渲染为语言标签 + 可编辑 `textarea`（`data-field="code"`），元素上带 `data-block-id`（renderer 注入）。textarea `input` 经 main.ts 委托重建整块行（保留 `data-code-open` / `data-code-close` 原始围栏）→ `store.setRawBlockLines` → `setRawBlock` op（热路径不重渲染，同 setNodeText）。正在编辑本块时 `updateRawBlockView` 一票跳过（`el.contains(document.activeElement)`），不打断输入。创建见快捷键表 ` ``` ` 行。
 
-**出口手势**（代码块是文档级块、只能顶层，容易变死胡同，见 02）：keymap 对 textarea 不生效（`saveCaret` 返回 null），故在 main.ts 的 root keydown 里单独处理——
+**节点代码块**（`.node > .node-code`）：节点的 `note` 整体是围栏块时，`syncNote` 渲染成同一套代码块 UI（`data-field="noteCode"`），编辑经 `setNote` 整块替换。围栏解析/渲染由 `codeFence.ts` 与文档级代码块共用，两条路径只差 textarea 的 `data-field`。这就是「节点下面挂代码块」——见 02，**不需要新 op**。
 
-- **Cmd/Ctrl+Enter**：在代码块后新建一个顶层节点并聚焦（`insertRootAfterBlock`，BUG-003）。
-- **空代码块上 Backspace/Delete**：删掉整个围栏代码块，焦点落到相邻节点（`deleteRawBlock`，BUG-004）。非空时不触发（正常删字符），要删有内容的块先清空正文。
+- 新建时写 `` ```lang\n``` ``（**不留空正文行**：那会被序列化成一行缩进空白）。
+- **正文为空的「代码块节点」**：`.node-row` 加 `.code-only`，代码块挂进行内（`syncNoteCode` 插到 `.text` 之前），块上方不再留空 bullet 行；正文有字时仍挂在行下方。空正文缩成零宽点击区，聚焦时靠 `flex-wrap` 折到块下方单独成行。
+- 代码正文里的空行没问题，parser 侧已支持（见 03「note 续行」的围栏例外）。
+- `note` 被删掉时 `syncNote` 无条件摘除代码块 DOM——此刻焦点还在该 textarea 里，照搬「正在编辑就不动」的守卫会让它赖着不走。
+
+**出口手势**（代码块容易变死胡同）：keymap 对 textarea 不生效（`saveCaret` 返回 null），故在 main.ts 的 root keydown 里单独处理——
+
+| 手势 | 文档级代码块 | 节点代码块 |
+|---|---|---|
+| `Cmd/Ctrl+Enter` | 其后新建顶层节点（`insertRootAfterBlock`，BUG-003） | 其后新建同级节点（`insertSubtree`） |
+| 空块 `Backspace`/`Delete` | 删掉整块（`deleteRawBlock`，BUG-004） | `setNote(null)` 摘掉代码块，光标回正文末尾 |
+
+非空时不触发（正常删字符），要删有内容的块先清空正文。
 
 ## 斜杠插入菜单（slashMenu.ts）
 
@@ -114,7 +168,7 @@ Workflowy 式 `/` 菜单：在正文（`text` 字段）词首（行首或空白�
 
 条目复用现有 op、不改数据模型：
 
-- **Code block**：`toCodeBlock`。受纯 Markdown 红线限制**只能顶层空节点**——`enabled` 用 `locationOf().parentId === null` 且无子/备注/镜像过滤；不合格时该条不出现（嵌套节点 `/code` 显示"无匹配"，Enter 放行为普通拆分）。转换时 `/code` 文本随节点整体被替换成代码块 RawBlock，无需单独删。
+- **Code block**：两条路径。去掉 `/token` 后为空的**顶层无子节点** → `toCodeBlock`（文档级，文件里没有 bullet，`/code` 文本随节点一并消失）；**其余节点** → `setText(去掉 token)` + `setNote(围栏)` 挂到该节点下。`enabled` 只排除「已有备注」与镜像节点（note 只有一份，代码块会顶掉原备注）。
 - **To-do**：先 `setText` 删掉 `/query`，再 `setChecked{checked:false}`（未勾选任务）。用 `setChecked` 而非 `toggleChecked`，因为后者从 `null` 只能到 `true`（见 04）。
 - **Numbered**：先 `setText` 删掉 `/query`，再 `toggleOrdered`（已是有序则跳过）。
 

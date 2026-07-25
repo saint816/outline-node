@@ -6,10 +6,13 @@ import { parseOutline } from '../core/parser.js';
 import { serializeOutline } from '../core/serializer.js';
 import type { CaretPos } from './caret.js';
 import { saveCaret } from './caret.js';
+import type { NodeSelection } from './selection.js';
 import type { Store } from './store.js';
 
 export interface ClipboardContext {
   store: Store;
+  /** 节点多选：非空时 copy/cut 作用在整个选区上（见 selection.ts）。 */
+  selection: NodeSelection;
   setNextCaret(pos: CaretPos): void;
   /** 把图片字节交给 host 写到文档同目录的 name 文件（见 docs/04 saveImage）。 */
   saveImage(name: string, dataBase64: string): void;
@@ -94,7 +97,10 @@ function imageFileFrom(data: DataTransfer | null): File | null {
  */
 function insertPastedImage(file: File, ctx: ClipboardContext, caret: CaretPos): void {
   const ext = MIME_EXT[file.type] ?? 'png';
-  const name = `pasted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  // 落到 `<文件名>/assets/` 下（host 注入的 data-assets-dir），别把图片撒在笔记同级目录里
+  const dir = (document.documentElement.dataset.assetsDir ?? '').replace(/^\/+|\/+$/g, '');
+  const fileName = `pasted-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const name = dir === '' ? fileName : `${dir}/${fileName}`;
   const embed = `![[${name}]]`;
 
   const node = ctx.store.findNode(caret.nodeId);
@@ -159,6 +165,15 @@ function lastNode(node: OutlineNode): OutlineNode {
 }
 
 function onCopy(event: ClipboardEvent, ctx: ClipboardContext, cut: boolean): void {
+  // 多选优先：整段选区序列化成一份 markdown 列表（cut 再整段删除）
+  const selected = ctx.selection.nodes();
+  if (selected.length > 0) {
+    event.preventDefault();
+    event.clipboardData?.setData('text/plain', nodesToMarkdown(ctx, selected));
+    if (cut) ctx.selection.deleteSelected(ctx.setNextCaret);
+    return;
+  }
+
   const selection = window.getSelection();
   // 选中了文本 → 走浏览器默认的文本复制
   if (selection && !selection.isCollapsed) return;
@@ -179,8 +194,13 @@ function onCopy(event: ClipboardEvent, ctx: ClipboardContext, cut: boolean): voi
 
 /** 光标所在节点的整棵子树 → markdown 列表（与文件里的写法一致）。 */
 export function subtreeToMarkdown(ctx: ClipboardContext, node: OutlineNode): string {
+  return nodesToMarkdown(ctx, [node]);
+}
+
+/** 若干棵子树 → 一份 markdown 列表（多选复制）。 */
+function nodesToMarkdown(ctx: ClipboardContext, nodes: OutlineNode[]): string {
   return serializeOutline({
-    blocks: [{ kind: 'list', id: 'clipboard', roots: [node] }],
+    blocks: [{ kind: 'list', id: 'clipboard', roots: nodes }],
     indentUnit: ctx.store.doc.indentUnit,
     eol: '\n',
     eofNewline: true,
