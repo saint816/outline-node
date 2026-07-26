@@ -56,12 +56,18 @@ export function renderFence(el: HTMLElement, fence: CodeFence, field: 'code' | '
   if (el.dataset.codeSig === sig) return; // 内容没变就不重建，避免打断输入 / 闪烁
   el.dataset.codeSig = sig;
 
-  // 头部：语言徽标 + 复制按钮（按钮常驻 DOM，靠 CSS 在 hover/focus 时才显形）
+  // 头部：语言选择按钮 + 复制按钮。绝对定位在代码块右上角，**不占布局高度**——
+  // 让它占一行会把「块排进节点行」的成果顶掉，代码块上方又多出一条空行（实机反馈）。
   const head = document.createElement('div');
   head.className = 'code-head';
-  const label = document.createElement('span');
+  const label = document.createElement('button');
+  label.type = 'button';
   label.className = 'code-lang';
-  label.textContent = fence.lang;
+  label.dataset.action = 'pick-lang';
+  label.dataset.lang = fence.lang;
+  label.textContent = fence.lang === '' ? t('code.plain') : fence.lang;
+  label.title = t('code.pickLang');
+  label.setAttribute('aria-label', t('code.pickLang'));
   const copy = document.createElement('button');
   copy.type = 'button';
   copy.className = 'code-copy';
@@ -91,13 +97,14 @@ export function renderFence(el: HTMLElement, fence: CodeFence, field: 'code' | '
   } else {
     el.classList.remove('highlighted');
   }
-  body.append(area);
-  el.replaceChildren(head, body);
+  body.append(area, head);
+  el.replaceChildren(body);
 }
 
 /** 打字热路径：只重画高亮层，不重建代码块 DOM（重建会打断输入）。 */
 export function syncHighlight(block: HTMLElement, code: string): void {
   const hl = block.querySelector<HTMLElement>('.code-hl');
   if (hl === null) return;
-  renderHighlight(hl, code, block.querySelector('.code-lang')?.textContent ?? '');
+  // 语言取 dataset 而不是徽标文字：徽标上的「纯文本 / text」是本地化文案，不是语言 id
+  renderHighlight(hl, code, block.querySelector<HTMLElement>('.code-lang')?.dataset.lang ?? '');
 }

@@ -26,6 +26,7 @@ const SHORTCUTS: { keys: string | (() => string); labelKey: MessageKey }[] = [
   { keys: 'Cmd/Ctrl+Enter（代码块内）', labelKey: 'help.codeExit' },
   { keys: 'Backspace（空代码块）', labelKey: 'help.codeDelete' },
   { keys: 'Esc / ↑↓（代码块内）', labelKey: 'help.codeEscape' },
+  { keys: 'Tab / Shift+Tab（代码块内）', labelKey: 'help.codeIndent' },
   { keys: '?', labelKey: 'help.help' },
 ];
 

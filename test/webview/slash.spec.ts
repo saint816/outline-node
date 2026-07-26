@@ -36,18 +36,19 @@ test('输入 / 在空的顶层节点弹出菜单，含 Code/To-do/Numbered', asy
   await expect(menu.locator('.slash-item')).toHaveText([/Code block/, /To-do/, /Numbered list/]);
 });
 
-test('/code + Enter：空顶层节点转成代码块并聚焦', async ({ page }) => {
+test('/code + Enter：空顶层节点也挂成节点代码块（保留 bullet，能拖能缩进）', async ({ page }) => {
   await openOutline(page, [node('a', ''), node('b', 'after')]);
   await focusText(page, 'a', 0);
   await page.keyboard.type('/code');
   await expect(page.locator('.slash-menu .slash-item')).toHaveText([/Code block/]);
   await page.keyboard.press('Enter');
 
-  const area = page.locator('.raw-block.code-block textarea.code-input');
+  const area = page.locator('.node[data-id="a"] > .node-row > .node-code textarea.code-input');
   await expect(area).toHaveCount(1);
   await expect(area).toBeFocused();
-  await expect(page.locator('.node[data-id="a"]')).toHaveCount(0);
+  await expect(page.locator('.node[data-id="a"] > .node-row > .bullet')).toBeVisible();
   await expect(page.locator('.node[data-id="b"]')).toHaveCount(1);
+  await expect(page.locator('#outline-root > .list-block > .raw-block.code-block')).toHaveCount(0);
 });
 
 test('/todo + Enter：删掉 /todo 并把节点设为未勾选任务（setChecked false）', async ({ page }) => {

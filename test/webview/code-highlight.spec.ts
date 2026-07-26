@@ -1,7 +1,7 @@
 // 代码块的语法高亮 + 复制按钮。高亮层是 textarea 背后的 <pre>，两层必须严格对齐，
 // 否则整块代码「重影」；复制走宿主剪贴板（webview 里的浏览器剪贴板 API 有静默失败前科）。
 import { expect, test, type Page } from '@playwright/test';
-import { clearPosted, node, openOutline, posted } from './support.js';
+import { clearPosted, inject, node, openOutline, posted } from './support.js';
 
 const TS = '```ts\nconst n = 42; // 注释\n```';
 
@@ -94,4 +94,115 @@ test('复制按钮平时不显形，hover 代码块才出现', async ({ page }) 
 
   await page.locator('.node[data-id="a"] .node-code').hover();
   expect(await btn.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+});
+
+
+// 围栏行被渲染层摘掉了，语言只活在 data-code-open 里：不给入口就永远改不了（实机反馈）。
+test('点语言徽标切换语言：重写围栏开行、重画高亮，围栏字符与缩进不动', async ({ page }) => {
+  await openOutline(page, [fence('```ts\nprint(1)\n```')]);
+  await page.locator('.code-lang').click();
+  await expect(page.locator('.lang-menu')).toBeVisible();
+  // 当前语言打勾
+  await expect(page.locator('.lang-menu .context-menu-item.current')).toHaveText('TypeScript');
+
+  await clearPosted(page);
+  await page.locator('.lang-menu .context-menu-item', { hasText: 'Python' }).click();
+  await expect(page.locator('.lang-menu')).toHaveCount(0);
+  await expect(page.locator('.code-lang')).toHaveText('python');
+
+  await inject(page, { type: 'ack', seq: 1, version: 2 });
+  await page.waitForFunction(() =>
+    (window as never as { __posted: { type: string; ops?: { op: string; note?: string }[] }[] }).__posted.some(
+      (m) => m.type === 'edit' && (m.ops ?? []).some((o) => o.op === 'setNote' && o.note?.startsWith('```python')),
+    ),
+  );
+});
+
+test('波浪号围栏切换语言后仍是波浪号（字节保真）', async ({ page }) => {
+  await openOutline(page, [fence('~~~~ts\nx\n~~~~')]);
+  await page.locator('.code-lang').click();
+  await page.locator('.lang-menu .context-menu-item', { hasText: 'Go' }).click();
+
+  const open = await page.locator('.node-code').evaluate((el: HTMLElement) => el.dataset.codeOpen);
+  expect(open).toBe('~~~~go');
+});
+
+// 代码块节点的正文宽度为 0、点不到：Tab 若不接管，就完全没有缩进入口。
+test('节点代码块里 Tab / Shift+Tab 缩进的是节点本身，焦点留在代码里', async ({ page }) => {
+  await openOutline(page, [
+    node('x', '前一个兄弟'),
+    { id: 'a', text: '', note: '```ts\nconst a = 1;\n```', children: [] },
+  ]);
+  const area = page.locator('.node[data-id="a"] textarea.code-input');
+  await area.click();
+  await page.keyboard.press('Tab');
+
+  await expect(page.locator('.node[data-id="x"] > .children > .node[data-id="a"]')).toHaveCount(1);
+  await expect(page.locator('.node[data-id="a"] textarea.code-input')).toBeFocused();
+  await expect(area).toHaveValue('const a = 1;'); // 没往代码里插东西
+
+  await inject(page, { type: 'ack', seq: 1, version: 2 });
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('.list-block > .node[data-id="a"]')).toHaveCount(1);
+});
+
+test('代码块头部不占布局高度（块仍与 bullet 同排）', async ({ page }) => {
+  await openOutline(page, [{ id: 'a', text: '', note: '```ts\nx\n```', children: [] }]);
+  const geom = await page.evaluate(() => {
+    const box = (sel: string): DOMRect => document.querySelector(sel)!.getBoundingClientRect();
+    return { row: box('.node[data-id="a"] > .node-row').height, code: box('.node[data-id="a"] .node-code').height };
+  });
+  expect(geom.row - geom.code).toBeLessThanOrEqual(8);
+});
+
+
+// Esc 曾经无条件回到「本节点正文」，而代码块节点的正文是空的、零宽——聚焦它只会在
+// 代码块旁边冒出一条空输入框，看着像 bug（实机反馈）。正文为空时改去相邻节点。
+test('代码块节点按 Esc 去相邻节点，不落在零宽的空正文上', async ({ page }) => {
+  await openOutline(page, [
+    node('b', '上一个节点'),
+    { id: 'a', text: '', note: '```ts\nx\n```', children: [] },
+    node('c', '下一个节点'),
+  ]);
+  await page.locator('.node[data-id="a"] textarea.code-input').click();
+  await page.keyboard.press('Escape');
+
+  const at = await page.evaluate(() => ({
+    node: document.activeElement?.closest('.node')?.getAttribute('data-id'),
+    field: document.activeElement?.getAttribute('data-field'),
+  }));
+  expect(at).toEqual({ node: 'b', field: 'text' });
+});
+
+test('正文有字的代码块节点，Esc 仍回本节点正文', async ({ page }) => {
+  await openOutline(page, [node('b', '上一个'), fence('```ts\nx\n```')]);
+  await page.locator('.node[data-id="a"] textarea.code-input').click();
+  await page.keyboard.press('Escape');
+
+  const at = await page.evaluate(() => ({
+    node: document.activeElement?.closest('.node')?.getAttribute('data-id'),
+    field: document.activeElement?.getAttribute('data-field'),
+  }));
+  expect(at).toEqual({ node: 'a', field: 'text' });
+});
+
+// 空正文一旦获得焦点（比如从上一个节点按 ↓ 进来），它占住 bullet 右边这一行、
+// 代码块折到下一行并缩进对齐；代码块绝不能跑到正文左边去。
+test('代码块节点的空正文获得焦点时，代码块折行并缩进对齐', async ({ page }) => {
+  await openOutline(page, [
+    node('b', '上一个节点'),
+    { id: 'a', text: '', note: '```ts\nx\n```', children: [] },
+  ]);
+  await page.locator('.node[data-id="b"] [data-field="text"]').click();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toBeFocused();
+
+  const geom = await page.evaluate(() => {
+    const box = (sel: string): DOMRect => document.querySelector(sel)!.getBoundingClientRect();
+    const text = box('.node[data-id="a"] > .node-row > [data-field="text"]');
+    const code = box('.node[data-id="a"] .node-code');
+    return { textX: text.x, textBottom: text.bottom, codeX: code.x, codeY: code.y };
+  });
+  expect(geom.codeY).toBeGreaterThanOrEqual(geom.textBottom - 2); // 折到下一行
+  expect(Math.abs(geom.codeX - geom.textX)).toBeLessThanOrEqual(4); // 与正文左缘对齐
 });

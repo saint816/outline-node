@@ -213,7 +213,10 @@ export class NodeView {
     this.row.classList.toggle('code-only', inline);
     const parent = inline ? this.row : this.el;
     if (this.noteCodeEl.parentElement !== parent || inline !== this.noteCodeInline) {
-      if (inline) this.row.insertBefore(this.noteCodeEl, this.textEl);
+      // 行内时挂在正文**之后**：正文为空（宽度 0）看不出差别，但一旦正文获得焦点，
+      // 它会占住 bullet 右边这一行、代码块顺势折到下一行 —— 像个标题栏。
+      // 反过来（代码块在前）焦点一来就在代码块下方冒出一条空输入框，很像 bug（实机反馈）。
+      if (inline) this.row.append(this.noteCodeEl);
       else this.el.insertBefore(this.noteCodeEl, this.childrenEl);
       this.noteCodeInline = inline;
     }

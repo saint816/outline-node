@@ -119,7 +119,9 @@ host 侧的 mirror tree（带 raw）才是序列化依据；webview 树只服务
 
   一个节点的 note 只有一份，所以「代码块」与「普通备注」二选一（已有备注的节点不提供 `/code`）。
 - **可编辑**：渲染层给代码块 RawBlock 一个 `<textarea>`，改动经 `setRawBlock{id, lines}` 整块替换（保留首尾围栏行，只换正文）。`setRawBlock` 只对「首行是围栏」的 RawBlock 生效，其余 RawBlock 仍不可变（守住不变式 2 的边界）。
-- **可创建**：在**空的顶层根节点**上打 ` ``` ` / ` ```lang ` 再回车，经 `toCodeBlock{id, lang, blockId, restId}` 把该节点所在 ListBlock 从该位置切开，中间插入代码块 RawBlock。非根节点上不触发（保持 ``` 为普通文本）。`blockId`/`restId` 由 webview 生成、host 采纳（同 split 的 newId），保证两端确定性一致。
+- **可创建**：在**任意节点**上打 ` ``` ` / ` ```lang ` 再回车（或 `/code`），代码块一律**挂到该节点下**（`setText('') + setNote(围栏)`，一次 `dispatchAll` = 一个 undo 步）。
+  - 0.4.0–0.8.0 期间，空的顶层根节点是个特例：会经 `toCodeBlock{id, lang, blockId, restId}` 切成**文档级代码块**。0.9.0 起取消该特例——文档级块不是任何节点，**没有 bullet：拖不动、缩进不了、多选也选不中**（实机反馈）。当时之所以这么设计，是因为 0.4.0 的代码块还不能挂节点；0.7.0 起这条限制已不存在。
+  - **`toCodeBlock` op 保留**（协议只增不减，见红线 9），且仍是必要的：文件里本来就写在顶层的围栏块照旧解析/渲染成文档级 RawBlock——那是 Markdown 的事实结构，不是 UI 选择。这类块没有 bullet 属于固有限制，出口手势见 05。
 
 数据模型的 `Block` / `RawBlock` / `OutlineNode` 类型**不变**——代码块复用现成的 RawBlock，没有新增节点种类（这正是选路线 B 而非路线 A 的原因）。
 

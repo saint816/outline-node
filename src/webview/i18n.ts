@@ -61,6 +61,9 @@ export type MessageKey =
   | 'help.codeEscape'
   | 'code.copy'
   | 'code.copied'
+  | 'code.plain'
+  | 'code.pickLang'
+  | 'help.codeIndent'
   | 'help.multiSelect'
   | 'help.multiSelectClick'
   | 'slash.ariaLabel'
@@ -118,6 +121,9 @@ const EN: Record<MessageKey, string> = {
   'help.codeEscape': 'Leave code block (back to node text)',
   'code.copy': 'Copy',
   'code.copied': 'Copied',
+  'code.plain': 'text',
+  'code.pickLang': 'Change language',
+  'help.codeIndent': 'Indent / outdent this node',
   'help.multiSelect': 'Select multiple nodes (Tab / Alt+↑↓ / Cmd+Enter / Backspace apply to all)',
   'help.multiSelectClick': 'Extend the selection to the clicked node',
   'slash.ariaLabel': 'Insert menu',
@@ -176,6 +182,9 @@ const ZH: Record<MessageKey, string> = {
   'help.codeEscape': '退出代码块，回到节点正文',
   'code.copy': '复制',
   'code.copied': '已复制',
+  'code.plain': '纯文本',
+  'code.pickLang': '切换语言',
+  'help.codeIndent': '缩进 / 反缩进该节点',
   'help.multiSelect': '多选节点（Tab / Alt+↑↓ / Cmd+Enter / Backspace 批量生效）',
   'help.multiSelectClick': '把选区扩到点击的节点',
   'slash.ariaLabel': '插入菜单',

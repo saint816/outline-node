@@ -116,20 +116,24 @@ test('粘贴图片：光标处插入 ![[pasted-…]]，发出带 base64 的 save
   await expect(img).toHaveAttribute('src', /\?saved=/);
 });
 
-test('顶层空根节点打 ```lang 回车 → 转成代码块并聚焦，其余节点保留', async ({ page }) => {
+// 顶层空节点曾被转成「文档级代码块」，那种块没有 bullet：拖不动、缩进不了（实机反馈）。
+// 现在一律挂到节点下，节点连同 bullet 保留。
+test('顶层空根节点打 ```lang 回车 → 代码块挂到该节点下，节点与 bullet 保留', async ({ page }) => {
   await openOutline(page, [node('a', ''), node('b', 'after')]);
   await focusText(page, 'a', 0);
   await page.keyboard.type('```js');
   await page.keyboard.press('Enter');
 
-  const area = page.locator('.raw-block.code-block textarea.code-input');
+  const area = page.locator('.node[data-id="a"] > .node-row > .node-code textarea.code-input');
   await expect(area).toHaveCount(1);
   await expect(area).toBeFocused();
   await expect(area).toHaveValue('');
-  await expect(page.locator('.raw-block.code-block .code-lang')).toHaveText('js');
-  // a 被消费、b 保留（DOM 结构即 toCodeBlock 的乐观应用结果）
-  await expect(page.locator('.node[data-id="a"]')).toHaveCount(0);
+  await expect(page.locator('.node[data-id="a"] .code-lang')).toHaveText('js');
+  // 节点还在，圆点也在（能拖、能缩进）
+  await expect(page.locator('.node[data-id="a"] > .node-row > .bullet')).toBeVisible();
   await expect(page.locator('.node[data-id="b"]')).toHaveCount(1);
+  // 不再产生文档级代码块
+  await expect(page.locator('#outline-root > .list-block > .raw-block.code-block')).toHaveCount(0);
 });
 
 test('嵌套节点上打 ```ts 回车 → 代码块挂到该节点下（note 围栏块），节点保留', async ({ page }) => {

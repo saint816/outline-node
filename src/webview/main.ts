@@ -3,7 +3,8 @@ import './styles.css';
 import { nanoid } from 'nanoid';
 import { asH2W, type H2W, type W2H } from '../shared/protocol.js';
 import { activeEditable, restoreCaret, saveCaret, type CaretPos } from './caret.js';
-import { fenceLinesFrom, syncHighlight } from './codeFence.js';
+import { fenceLinesFrom, parseFence, renderFence, syncHighlight } from './codeFence.js';
+import { LANGUAGES } from './highlight.js';
 import { ime, installImeGuard } from './ime.js';
 import { handleKeydown } from './keymap.js';
 import { t } from './i18n.js';
@@ -418,6 +419,16 @@ function handleCodeBlockKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): bo
     return true;
   }
 
+  // 顶层代码块是文档级块、没有层级可缩进，Tab 就按代码编辑器的直觉插两个空格
+  // （默认行为是把焦点甩到别处，比什么都不做还糟）。
+  if (e.key === 'Tab' && !e.shiftKey) {
+    e.preventDefault();
+    const start = area.selectionStart;
+    area.setRangeText('  ', start, area.selectionEnd, 'end');
+    commitCodeBlock(area);
+    return true;
+  }
+
   // Esc：退到相邻节点正文（与节点代码块的出口手势一致）
   if (e.key === 'Escape') {
     const neighbor = adjacentNodeId(blockEl);
@@ -471,16 +482,26 @@ function handleNoteCodeKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): boo
     return true;
   }
 
+  // Tab / Shift+Tab 缩进的是**这个节点**，不是代码文本。理由：代码块节点的正文宽度为 0、
+  // 点不到，Tab 又是全 app 统一的层级手势；此前 Tab 只会把焦点甩走，等于没有缩进入口（实机反馈）。
+  // 代码里要缩进就打空格。
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    store.dispatch({ op: e.shiftKey ? 'outdent' : 'indent', id });
+    focusNoteCode(id);
+    return true;
+  }
+
   // 出口手势：Esc 回到本节点正文；末行 ↓ 去下一个可见节点；首行 ↑ 回本节点正文。
   // 没有这几条，代码块就是个只进不出的坑（实机反馈：编辑完跳不出来）。
   if (e.key === 'Escape') {
     e.preventDefault();
-    focusNodeText(id);
+    leaveNoteCode(id, -1);
     return true;
   }
   if (e.key === 'ArrowUp' && atFirstLine(area)) {
     e.preventDefault();
-    focusNodeText(id);
+    leaveNoteCode(id, -1);
     return true;
   }
   if (e.key === 'ArrowDown' && atLastLine(area)) {
@@ -491,6 +512,24 @@ function handleNoteCodeKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): boo
     return true;
   }
   return false;
+}
+
+/**
+ * 退出节点代码块：正文有字就回正文；正文为空（= 这个节点就是一个代码块）则去相邻节点——
+ * 空正文是零宽的，聚焦它只会在代码块旁边冒出一条空输入框，看着像 bug（实机反馈）。
+ */
+function leaveNoteCode(id: string, dir: -1 | 1): void {
+  const node = store.findNode(id);
+  if (node && node.text !== '') return focusNodeText(id);
+  const rows = store.visibleRows();
+  const index = rows.findIndex((row) => row.node.id === id);
+  const neighbor =
+    index < 0
+      ? null
+      : dir === -1
+        ? (rows[index - 1]?.node.id ?? rows[index + 1]?.node.id ?? null)
+        : (rows[index + 1]?.node.id ?? rows[index - 1]?.node.id ?? null);
+  focusNodeText(neighbor ?? id);
 }
 
 /** textarea 光标是否在首行 / 末行（跨节点移动的判据，和正文的 ↑↓ 同一套直觉）。 */
@@ -654,6 +693,16 @@ root.addEventListener(
   true,
 );
 
+// 代码块的语言徽标即选择器：围栏行被渲染层摘掉了，不给入口就永远改不了语言（实机反馈）。
+root.addEventListener('click', (event) => {
+  const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-action="pick-lang"]');
+  const block = btn?.closest<HTMLElement>('.raw-block');
+  if (!btn || !block) return;
+  event.preventDefault();
+  const rect = btn.getBoundingClientRect();
+  openLangMenu(rect.left, rect.bottom + 2, block);
+});
+
 // 代码块的复制按钮：委托到 root，读同一块里的 textarea 值，交给宿主写系统剪贴板。
 // 刻意不用 navigator.clipboard / execCommand —— 它们在 VS Code webview 里静默失败过（见 docs/11）。
 root.addEventListener('click', (event) => {
@@ -710,6 +759,59 @@ function openContextMenu(x: number, y: number, nodeId: string): void {
     closeContextMenu();
   };
   document.addEventListener('pointerdown', dismissContextMenu);
+}
+
+/** 语言选择菜单：复用右键菜单的样式与关闭逻辑。 */
+function openLangMenu(x: number, y: number, block: HTMLElement): void {
+  closeContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'context-menu lang-menu';
+  menu.id = 'outline-context-menu';
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  const current = block.querySelector('.code-lang')?.getAttribute('data-lang') ?? '';
+
+  for (const lang of LANGUAGES) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'context-menu-item' + (lang.id === current ? ' current' : '');
+    item.textContent = lang.label;
+    item.addEventListener('click', () => {
+      setFenceLang(block, lang.id);
+      closeContextMenu();
+    });
+    menu.append(item);
+  }
+  document.body.append(menu);
+  dismissContextMenu = (e: Event): void => {
+    if (menu.contains(e.target as Node)) return;
+    closeContextMenu();
+  };
+  document.addEventListener('pointerdown', dismissContextMenu);
+}
+
+/**
+ * 改写围栏的开行语言，保留原缩进与围栏字符（``` / ~~~ 及其长度——字节保真红线）。
+ * 改完走和「编辑代码」同一条提交路径，不新增 op。
+ */
+function setFenceLang(block: HTMLElement, lang: string): void {
+  const open = block.dataset.codeOpen ?? '```';
+  const m = /^([ \t]*)([`~]{3,})/.exec(open);
+  block.dataset.codeOpen = `${m?.[1] ?? ''}${m?.[2] ?? '```'}${lang}`;
+  const area = block.querySelector('textarea.code-input');
+  if (!(area instanceof HTMLTextAreaElement)) return;
+
+  // 本地先重建这一块：setNote / setRawBlock 是不 emit 的热路径（护击键红线），
+  // 等不到重渲染；而换语言要加/删高亮层，只改文字不够。
+  const isNodeCode = block.classList.contains('node-code');
+  const fence = parseFence(fenceLinesFrom(block, area.value));
+  if (fence) renderFence(block, fence, isNodeCode ? 'noteCode' : 'code');
+  const next = block.querySelector<HTMLTextAreaElement>('textarea.code-input');
+  if (!next) return;
+  autoGrow(next);
+  next.focus();
+  if (isNodeCode) commitNoteCode(next);
+  else commitCodeBlock(next);
 }
 
 let dismissContextMenu: ((e: Event) => void) | null = null;

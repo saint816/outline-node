@@ -427,16 +427,41 @@ body {
   color: var(--vscode-editor-foreground);
 }
 
+/* 语言徽标同时是切换语言的按钮 */
 .code-lang {
-  display: inline-block;
-  margin-bottom: 3px;
-  padding: 0 6px;
+  padding: 1px 6px;
+  border: 1px solid transparent;
   border-radius: 3px;
+  font-family: inherit;
   font-size: 0.72em;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--vscode-descriptionForeground);
   background: var(--vscode-badge-background);
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.raw-block.code-block:hover .code-lang,
+.code-lang:hover,
+.code-lang:focus-visible {
+  opacity: 1;
+}
+
+.code-lang:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* 语言菜单：条目多，限高可滚；当前项打点 */
+.lang-menu {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.lang-menu .context-menu-item.current::after {
+  content: '✓';
+  margin-left: 8px;
+  opacity: 0.7;
 }
 
 /* 挂在节点下的代码块（= 该节点的 note 恰为围栏块）：缩进对齐到正文列 */
@@ -464,20 +489,30 @@ body {
   overflow: hidden;
 }
 
+/* 正文获得焦点时它占住 bullet 右边这一行，代码块折到下一行；折下去的块要缩进到
+   正文那一列（toggle 14 + gap 4 + bullet 16 + gap 4 = 38px），否则会贴到最左像脱缰。 */
 .node-row.code-only > .text:focus {
-  flex: 1 0 100%;
+  flex: 1 0 auto;
 }
 
-/* 代码块头部：语言徽标 + 复制按钮 */
+.node-row.code-only > .text:focus ~ .node-code.raw-block {
+  flex: 1 0 100%;
+  margin-left: 38px;
+}
+
+/* 代码块头部：浮在代码块右上角，**不占布局高度**——占一行会把「块排进节点行」顶掉，
+   代码块上方又多出一条空行（实机反馈两轮）。 */
 .code-head {
+  position: absolute;
+  top: 3px;
+  right: 3px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 3px;
+  gap: 4px;
+  z-index: 1;
 }
 
 .code-copy {
-  margin-left: auto;
   padding: 1px 8px;
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: 3px;

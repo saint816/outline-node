@@ -162,19 +162,12 @@ function onEnter(caret: CaretPos, ctx: KeymapContext): void {
     return;
   }
 
-  // 打 ``` / ```lang 回车 → 代码块。两条路径（见 docs/05「代码块」）：
-  //   顶层空壳节点 → 文档级代码块（toCodeBlock，文件里没有 bullet）；
-  //   其余节点     → 挂到该节点下（setNote 写入围栏块，文件里缩进在该项内容列下）。
+  // 打 ``` / ```lang 回车 → 代码块**挂到该节点下**（setNote 写入围栏块，文件里缩进在该项内容列下）。
+  // 顶层空壳节点曾经被转成文档级代码块（toCodeBlock）——那是 0.4.0 代码块还不能嵌套时的权宜之计，
+  // 副作用是块没有 bullet：拖不动、缩进不了、也选不中（实机反馈）。现在一律挂节点。
+  // `toCodeBlock` op 保留：文件里本来就位于顶层的围栏块仍按文档级块渲染（那是 Markdown 的事实结构）。
   const fence = /^```(\w*)$/.exec(node.text);
   if (fence && node.mirror === null) {
-    const loc = ctx.store.locationOf(node.id);
-    if (loc?.parentId === null && node.children.length === 0 && node.note === null) {
-      const blockId = ctx.newId();
-      const restId = ctx.newId();
-      ctx.focusCodeBlock(blockId);
-      ctx.store.dispatch({ op: 'toCodeBlock', id: node.id, lang: fence[1], blockId, restId });
-      return;
-    }
     if (node.note === null) {
       ctx.focusNoteCode(node.id);
       // 一次 dispatchAll = 一条 edit = 一个 undo 步（清掉 ``` 与挂上代码块是一个动作）

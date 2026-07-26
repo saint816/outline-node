@@ -38,6 +38,22 @@ const ALIASES: Record<string, string> = {
   vue: 'markup',
 }
 
+/** 语言选择菜单里可选的语言（值 = 写进围栏行的字符串，空串 = 纯文本）。 */
+export const LANGUAGES: readonly { id: string; label: string }[] = [
+  { id: '', label: 'Plain text' },
+  { id: 'js', label: 'JavaScript' },
+  { id: 'ts', label: 'TypeScript' },
+  { id: 'json', label: 'JSON' },
+  { id: 'python', label: 'Python' },
+  { id: 'bash', label: 'Shell' },
+  { id: 'go', label: 'Go' },
+  { id: 'rust', label: 'Rust' },
+  { id: 'sql', label: 'SQL' },
+  { id: 'yaml', label: 'YAML' },
+  { id: 'html', label: 'HTML' },
+  { id: 'css', label: 'CSS' },
+];
+
 /** 该语言能否高亮（决定是否值得建高亮层）。 */
 export function canHighlight(lang: string): boolean {
   return grammarOf(lang) !== null;

@@ -4,8 +4,8 @@
 // 触发：`/` 位于词首（行首或紧跟空白）且光标在正文（text 字段）。`/` 后到光标的连续非空白
 // 串是过滤 query。无匹配时只显示占位提示、不拦截 Enter（让普通拆分照常发生）。
 //
-// 条目复用现有 op：代码块 toCodeBlock（受纯 Markdown 红线限制，仅顶层空节点合格）、
-// 待办 setChecked(false)、编号 toggleOrdered。代码块之外的条目先删掉 `/query` 再转换。
+// 条目复用现有 op：代码块 setText+setNote（挂到该节点下，节点保留 bullet）、
+// 待办 setChecked(false)、编号 toggleOrdered。所有条目都先删掉 `/query` 再转换。
 
 import type { CaretPos } from './caret.js';
 import { caretRect, saveCaret } from './caret.js';
@@ -35,8 +35,8 @@ const ITEMS: SlashItem[] = [
     key: 'code',
     label: () => t('slash.codeBlock'),
     keywords: ['code', 'codeblock', 'fence', '代码', '代码块', '```'],
-    // 任何节点都能挂代码块（顶层空壳走文档级 toCodeBlock，其余挂成节点的 note）。
-    // 已有备注的节点除外：note 只有一份，代码块会顶掉原备注。
+    // 任何节点都能挂代码块（写进该节点的 note）。已有备注的节点除外：
+    // note 只有一份，代码块会顶掉原备注。
     enabled: (node) => node.note === null && node.mirror === null,
   },
   {
@@ -185,17 +185,8 @@ export class SlashMenu {
     const newText = node.text.slice(0, this.start) + node.text.slice(this.end);
 
     if (item.key === 'code') {
-      const loc = this.ctx.store.locationOf(node.id);
-      // 顶层空壳 → 文档级代码块（文件里没有 bullet）；toCodeBlock 会整块替换该节点，
-      // /code 文本随节点一并消失，无需单独删
-      if (loc?.parentId === null && node.children.length === 0 && newText === '') {
-        const blockId = this.ctx.newId();
-        const restId = this.ctx.newId();
-        this.ctx.focusCodeBlock(blockId);
-        this.ctx.store.dispatch({ op: 'toCodeBlock', id: node.id, lang: '', blockId, restId });
-        return this.close();
-      }
-      // 其余：挂到该节点下（见 docs/05「代码块」）。一次 dispatchAll = 一个 undo 步
+      // 一律挂到该节点下（见 docs/05「代码块」），顶层空壳也不例外——转成文档级块会丢掉
+      // bullet，拖不动也缩进不了（实机反馈）。一次 dispatchAll = 一个 undo 步
       this.ctx.focusNoteCode(node.id);
       this.ctx.store.dispatchAll([
         { op: 'setText', id: node.id, text: newText },
