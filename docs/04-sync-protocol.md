@@ -31,7 +31,8 @@ export type W2H =
   | { type: 'requestRedo' }
   | { type: 'saveFolding'; foldedKeys: string[] }                // 折叠变化时节流上报（见 06）
   | { type: 'saveBookmarks'; bookmarkKeys: string[] }            // 星标变化时节流上报（nodeKey；UI-state，仿 saveFolding）
-  | { type: 'saveImage'; name: string; dataBase64: string };    // 粘贴/拖入图片：name 是**相对文档目录的路径**（`<文件名>/assets/pasted-…`）
+  | { type: 'saveImage'; name: string; dataBase64: string }     // 粘贴/拖入图片：name 是**相对文档目录的路径**（`<文件名>/assets/pasted-…`）
+  | { type: 'copyText'; text: string };                         // 代码块复制按钮 → host `vscode.env.clipboard.writeText`（单向，无回执）
 
 // ---------- host → webview ----------
 export type H2W =
@@ -60,6 +61,10 @@ export interface EditorConfig {
 4. **删除不与删节点耦合**：删节点只是文本编辑（可 undo），删文件不可 undo。孤儿图片走**保存后自动清理**（默认开，只动 `pasted-*`，移废纸篓）+ **显式命令** `outlineNode.cleanupImages`（全量 + 确认），见 `extension/imageCleanup.ts`。
 
 图片能被 webview 加载依赖 `localResourceRoots` 含文档目录 + CSP `img-src`（见 05 / provider）。
+
+### 复制到剪贴板（copyText）
+
+单向、无回执、不碰文档：host 收到就 `vscode.env.clipboard.writeText(text)`。**刻意不在 webview 里用 `navigator.clipboard` / `execCommand`**——它们在 VS Code webview 下有静默失败的前科（见 05 图片粘贴一节与 docs/11），而「点了复制没反应」正是最难被发现的那类 bug。回执也不需要：UI 上的「已复制」是本地反馈，写剪贴板失败由 VS Code 自己报错。
 
 ## Op 全集（core/ops.ts）
 

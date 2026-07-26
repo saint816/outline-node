@@ -58,6 +58,12 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
           void saveImageFile(document, webview, msg);
           return;
         }
+        if (msg.type === 'copyText') {
+          // 走宿主剪贴板：webview 里的 navigator.clipboard / execCommand 在 VS Code 下
+          // 有过静默失败的前科（见 docs/11），复制这种「按了没反应」最难查
+          void vscode.env.clipboard.writeText(msg.text);
+          return;
+        }
         void session.handleMessage(msg);
       }),
       vscode.workspace.onDidChangeTextDocument((e) => {

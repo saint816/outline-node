@@ -27,7 +27,6 @@ export type MessageKey =
   | 'node.empty'
   | 'sidebar.ariaLabel'
   | 'sidebar.starred'
-  | 'sidebar.outline'
   | 'sidebar.empty'
   | 'sidebar.collapsePanel'
   | 'sidebar.expandPanel'
@@ -59,6 +58,9 @@ export type MessageKey =
   | 'help.slash'
   | 'help.codeExit'
   | 'help.codeDelete'
+  | 'help.codeEscape'
+  | 'code.copy'
+  | 'code.copied'
   | 'help.multiSelect'
   | 'help.multiSelectClick'
   | 'slash.ariaLabel'
@@ -82,7 +84,6 @@ const EN: Record<MessageKey, string> = {
   'node.empty': '(empty node)',
   'sidebar.ariaLabel': 'Outline navigation',
   'sidebar.starred': 'Starred',
-  'sidebar.outline': 'Outline',
   'sidebar.empty': 'No nodes yet',
   'sidebar.collapsePanel': 'Collapse sidebar',
   'sidebar.expandPanel': 'Expand sidebar',
@@ -114,6 +115,9 @@ const EN: Record<MessageKey, string> = {
   'help.slash': 'Open the / insert menu',
   'help.codeExit': 'New node after code block',
   'help.codeDelete': 'Delete empty code block',
+  'help.codeEscape': 'Leave code block (back to node text)',
+  'code.copy': 'Copy',
+  'code.copied': 'Copied',
   'help.multiSelect': 'Select multiple nodes (Tab / Alt+↑↓ / Cmd+Enter / Backspace apply to all)',
   'help.multiSelectClick': 'Extend the selection to the clicked node',
   'slash.ariaLabel': 'Insert menu',
@@ -138,7 +142,6 @@ const ZH: Record<MessageKey, string> = {
   'node.empty': '(空节点)',
   'sidebar.ariaLabel': '大纲导航',
   'sidebar.starred': '星标',
-  'sidebar.outline': '大纲',
   'sidebar.empty': '还没有节点',
   'sidebar.collapsePanel': '收起侧栏',
   'sidebar.expandPanel': '展开侧栏',
@@ -170,6 +173,9 @@ const ZH: Record<MessageKey, string> = {
   'help.slash': '打开 / 插入菜单',
   'help.codeExit': '在代码块后新建节点',
   'help.codeDelete': '删除空代码块',
+  'help.codeEscape': '退出代码块，回到节点正文',
+  'code.copy': '复制',
+  'code.copied': '已复制',
   'help.multiSelect': '多选节点（Tab / Alt+↑↓ / Cmd+Enter / Backspace 批量生效）',
   'help.multiSelectClick': '把选区扩到点击的节点',
   'slash.ariaLabel': '插入菜单',

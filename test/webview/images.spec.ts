@@ -236,6 +236,62 @@ test('节点代码块内 Cmd/Ctrl+Enter 在其后新建同级节点并聚焦', a
   expect(info.afterA).toBe(true);
 });
 
+// 代码块此前只有 Cmd+Enter 一个出口，不知道这条手势的人会被困在 textarea 里（实机反馈）。
+test('节点代码块出口：Esc 回正文、末行 ↓ 去下一个节点、首行 ↑ 回正文', async ({ page }) => {
+  await openOutline(page, [
+    { id: 'a', text: 'root', note: '```\nl1\nl2\nl3\n```', children: [] },
+    node('b', 'after'),
+  ]);
+  // textarea 里只有围栏内的正文（围栏行由 renderFence 摘掉），所以行号按 l1/l2/l3 数
+  const area = page.locator('.node[data-id="a"] > .node-code textarea.code-input');
+  const focusedNode = (): Promise<string | null> =>
+    page.evaluate(
+      () => document.activeElement?.closest('.node')?.getAttribute('data-id') ?? null,
+    );
+  const focusedField = (): Promise<string | null> =>
+    page.evaluate(() => document.activeElement?.getAttribute('data-field') ?? null);
+
+  await area.focus();
+  await page.keyboard.press('Escape');
+  expect(await focusedNode()).toBe('a');
+  expect(await focusedField()).toBe('text');
+
+  // 末行 ↓ → 下一个可见节点
+  await area.focus();
+  await area.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(el.value.length, el.value.length));
+  await page.keyboard.press('ArrowDown');
+  expect(await focusedNode()).toBe('b');
+
+  // 首行 ↑ → 回本节点正文
+  await area.focus();
+  await area.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(0, 0));
+  await page.keyboard.press('ArrowUp');
+  expect(await focusedNode()).toBe('a');
+  expect(await focusedField()).toBe('text');
+
+  // 中间行（l2）的 ↑↓ 仍然归 textarea 自己（不抢行内移动）
+  await area.focus();
+  await area.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(4, 4));
+  await page.keyboard.press('ArrowDown');
+  expect(await focusedNode()).toBe('a');
+  expect(await focusedField()).toBe('noteCode'); // 仍在代码块里
+});
+
+// 点图放大再关掉，光标必须回到该节点：否则图片节点没有键盘出口，建不了同级节点（实机反馈）。
+test('关闭放大浮层后光标回到图片所在节点，Enter 即建同级节点', async ({ page }) => {
+  await openOutline(page, [node('a', `![](${PNG})`), node('b', 'after')]);
+
+  await page.locator('.node[data-id="a"] img.node-image').click();
+  await expect(page.locator('.image-lightbox')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  expect(
+    await page.evaluate(() => document.activeElement?.closest('.node')?.getAttribute('data-id')),
+  ).toBe('a');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#outline-root .node')).toHaveCount(3);
+});
+
 test('镜像块引用 / 非图 wiki 嵌入不被当作图片', async ({ page }) => {
   await openOutline(page, [node('a', 'ref ![[#^abc123]]'), node('b', 'see ![[some-note]]')]);
   await expect(page.locator('.node-images')).toHaveCount(0);

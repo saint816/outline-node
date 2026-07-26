@@ -13,6 +13,8 @@ export interface SidebarCallbacks {
   onToggleCollapse(): void;
   /** 拖拽落定：把 id 移到 parentId 下的 index 处（index 按「摘除前」坐标，见 core/ops move）。 */
   onMove(id: string, parentId: string | null, index: number): void;
+  /** 分区折叠状态变化（纯 UI 态，交给 ViewState 持久化）。 */
+  onSectionsChanged(collapsedKeys: readonly string[]): void;
 }
 
 export interface SidebarModel {
@@ -34,7 +36,7 @@ interface SidebarRow {
 const MAX_ITEMS = 200;
 const DRAG_THRESHOLD_PX = 4;
 // 与 styles.css 的 .sidebar-item padding-left: calc(BASE + depth * STEP) 保持一致
-const INDENT_BASE_PX = 4;
+const INDENT_BASE_PX = 17;
 const INDENT_STEP_PX = 13;
 
 export class SidebarView {
@@ -44,6 +46,8 @@ export class SidebarView {
   private readonly indicator: HTMLElement;
   /** 侧栏树里被展开的节点 id（独立于主编辑区折叠；仅存内存）。 */
   private readonly expanded = new Set<string>();
+  /** 被折叠的分区键（'starred' / 'outline'）；随 ViewState 持久化，见 main.ts。 */
+  private collapsedSections = new Set<string>();
   private model: SidebarModel | null = null;
   /** 当前渲染出的大纲树行（按渲染顺序），拖拽落点计算用。 */
   private rows: SidebarRow[] = [];
@@ -109,7 +113,7 @@ export class SidebarView {
     this.rows = [];
     this.labels.clear();
     this.el.classList.toggle('collapsed', model.collapsed);
-    this.collapseBtn.textContent = model.collapsed ? '›' : '‹';
+    this.collapseBtn.textContent = model.collapsed ? '→' : '←';
     this.collapseBtn.setAttribute(
       'aria-label',
       model.collapsed ? t('sidebar.expandPanel') : t('sidebar.collapsePanel'),
@@ -119,20 +123,29 @@ export class SidebarView {
       return;
     }
 
-    const parts: HTMLElement[] = [this.homeItem(model.currentZoomId === null)];
+    const parts: HTMLElement[] = [];
     const counter = { n: 0 };
 
     if (model.starred.length > 0) {
-      parts.push(section(t('sidebar.starred')));
+      const open = !this.collapsedSections.has('starred');
+      parts.push(this.section(t('sidebar.starred'), 'starred', open));
       // 星标区扁平（书签就是导航目标，不展开、不作为拖拽源/落点）
-      for (const node of model.starred) {
-        if (counter.n >= MAX_ITEMS) break;
-        counter.n++;
-        parts.push(this.item(node, 0, false));
+      if (open) {
+        for (const node of model.starred) {
+          if (counter.n >= MAX_ITEMS) break;
+          counter.n++;
+          parts.push(this.item(node, 0, false));
+        }
       }
     }
 
-    parts.push(section(t('sidebar.outline')));
+    // 大纲区的标题就是 Home 本身（点它 = 回全文档），不再另起一行重复 Home
+    const outlineOpen = !this.collapsedSections.has('outline');
+    parts.push(this.homeItem(outlineOpen));
+    if (!outlineOpen) {
+      this.body.replaceChildren(...parts, this.indicator);
+      return;
+    }
     if (model.topLevel.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'sidebar-empty';
@@ -166,16 +179,72 @@ export class SidebarView {
     }
   }
 
+  /** 分区标题本身就是折叠开关（Workflowy 的做法：Starred 收起后不再和大纲重复列同一节点）。 */
+  private section(title: string, key: string, open: boolean): HTMLElement {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'sidebar-section';
+    el.dataset.section = key;
+    el.setAttribute('aria-expanded', String(open));
+    const caret = document.createElement('span');
+    caret.className = 'sidebar-section-caret';
+    caret.textContent = open ? '▾' : '▸';
+    caret.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.className = 'sidebar-section-label';
+    text.textContent = title;
+    el.append(caret, text);
+    el.addEventListener('click', () => this.toggleSection(key));
+    return el;
+  }
+
+  private toggleSection(key: string): void {
+    if (this.collapsedSections.has(key)) this.collapsedSections.delete(key);
+    else this.collapsedSections.add(key);
+    this.cb.onSectionsChanged([...this.collapsedSections]);
+    this.render();
+    this.refocus(`[data-section="${cssEscape(key)}"]`);
+  }
+
+  /** ViewState 恢复：外部灌入已折叠的分区键（渲染由随后的 update 负责）。 */
+  restoreSections(keys: readonly string[]): void {
+    this.collapsedSections = new Set(keys);
+  }
+
   private toggleExpand(id: string): void {
     if (this.expanded.has(id)) this.expanded.delete(id);
     else this.expanded.add(id);
     this.render();
+    this.refocus(`.sidebar-item[data-id="${cssEscape(id)}"] > .sidebar-toggle`);
   }
 
-  private homeItem(active: boolean): HTMLElement {
+  /** render() 整栏重建会把焦点甩到 body：把它送回刚点的那个开关，键盘操作才连得上。 */
+  private refocus(selector: string): void {
+    if (!this.body.contains(document.activeElement) && document.activeElement !== document.body) {
+      return;
+    }
+    this.body.querySelector<HTMLElement>(selector)?.focus();
+  }
+
+  /** Home = 大纲区的标题行：三角折叠整区，文字导航回全文档。
+      刻意不标 .active —— 它是常驻入口而非「当前位置」，常年高亮+粗体反而像误选中（实机反馈）。 */
+  private homeItem(open: boolean): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'sidebar-item sidebar-home' + (active ? ' active' : '');
-    row.append(spacer());
+    row.className = 'sidebar-item sidebar-home';
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'sidebar-toggle';
+    toggle.dataset.section = 'outline';
+    toggle.textContent = open ? '▾' : '▸';
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? t('sidebar.collapseNode') : t('sidebar.expandNode'));
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleSection('outline');
+    });
+    row.append(toggle);
+
     const label = document.createElement('button');
     label.type = 'button';
     label.className = 'sidebar-label';
@@ -374,13 +443,6 @@ export class SidebarView {
       left: INDENT_BASE_PX + depth * INDENT_STEP_PX,
     };
   }
-}
-
-function section(title: string): HTMLElement {
-  const el = document.createElement('div');
-  el.className = 'sidebar-section';
-  el.textContent = title;
-  return el;
 }
 
 function spacer(): HTMLElement {

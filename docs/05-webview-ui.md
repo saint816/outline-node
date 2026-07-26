@@ -90,7 +90,8 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 | `Cmd/Ctrl+Z` (+Shift) | undo/redo 转发（见上） |
 | `Cmd/Ctrl+F` | 聚焦插件内搜索框（过滤式搜索，不用 VS Code find widget） |
 | `Ctrl+O`（mac）/ `Ctrl+Alt+O`（其他） | 隐藏 / 显示已完成。webview 的按键会被转发给工作台做快捷键解析，只能挑 VS Code 没占的组合——已被实机否掉两轮：`Cmd+O` = 「打开文件」、`Cmd+Alt+O` = Remote 扩展「Open Remote Window」。Windows/Linux 上 `Ctrl+O` 才是「打开文件」，故分平台。平台由 host 注入 `<html data-platform>`（**不嗅探 UA**：Playwright 的 Chromium 在 macOS 上报 Windows UA）。判定用 `e.code === 'KeyO'`，不受 Option 改字符 / 布局影响；监听挂 document 级（BUG-002） |
-| `Esc` | 退出多选 / 清除搜索 / 取消拖拽 |
+| `Esc` | 退出多选 / 清除搜索 / 取消拖拽 / **退出代码块回到节点正文** |
+| 代码块内 `↑` / `↓`（首/末行） | 回本节点正文 / 去下一个可见节点。**其余方向键与回车一律留给 textarea**：大纲 keymap 不认识 textarea 的行结构，中间行按 ↓ 会把光标弹到别的节点（见 main.ts `CODE_LOCAL_KEYS`） |
 
 结构 op dispatch 前一律先 flush 待发的 setText（见 04 防抖策略）。
 
@@ -121,6 +122,26 @@ Workflowy 式的节点多选。**纯 webview UI 状态**：不写文件、不改
 
 zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`bullet` 占位但隐藏（`visibility:hidden`）——标题首字落在 `16 + 4(gap) + 2(padding) = 22px`，正好是子节点圆点的左缘（`toggle 14 + gap 4 + ::before left 4`）。两个都 `display:none` 会贴到容器最左，两个都 `visibility:hidden` 又比子节点还靠右，两版都被实机否掉过。
 
+## 代码块（codeFence.ts + highlight.ts）
+
+顶层代码块（文档级 RawBlock）与节点代码块（节点的 note 恰为围栏块）共用同一套渲染，差别只在 textarea 的 `data-field`（`code` → `setRawBlock`，`noteCode` → `setNote`）。
+
+```html
+<div class="raw-block code-block highlighted">
+  <div class="code-head"><span class="code-lang">ts</span><button class="code-copy" data-action="copy-code">Copy</button></div>
+  <div class="code-body">
+    <pre class="code-hl" aria-hidden="true">…Prism token…</pre>   <!-- 高亮层，只读、不吃事件 -->
+    <textarea class="code-input" data-field="noteCode"></textarea> <!-- 唯一的真实来源 -->
+  </div>
+</div>
+```
+
+- **高亮层压在透明文字的 textarea 之下**：textarea 内部无法着色，要「编辑时也有高亮」只有这一条路。两层的 **font-family / font-size / line-height / letter-spacing / tab-size / padding / border / white-space 必须逐条一致**，差一条整块代码就重影（`code-highlight.spec.ts` 逐条断言）。长行横向滚动时把 `scrollLeft` 同步给高亮层（`scroll` 不冒泡，挂捕获阶段）。
+- **打字热路径只重画高亮层**（`syncHighlight`），绝不重建代码块 DOM——重建会打断输入。
+- **语言支持**：Prism 打进 bundle（CSP 只放行本扩展资源，绝不外链 CDN）。**语言集受性能红线约束**：打包的语法越多，5000 节点的外部 refresh patch 越贴近 50ms 红线（实测见 07），所以只装常用的一批（core 自带 markup/css/javascript/clike + typescript/json/python/bash/go/rust/sql/yaml）。识别不了的语言不建高亮层（`canHighlight`），退化成纯 textarea，功能不受影响。**加语言前必须按 09 单独串行复测 perf。**
+- **配色**走主题变量 `--vscode-charts-*`（终端 ANSI 兜底），不写字面色——`theme.test.ts` 守着这条。代价是两组变量都缺时高亮整块退化成纯文本。
+- **复制按钮**发 `copyText` 给 host 走 `vscode.env.clipboard`（见 04），不用浏览器剪贴板 API。
+
 ## 剪贴板（clipboard.ts）
 
 - **paste**：`preventDefault()`；先看剪贴板里有没有图片：
@@ -136,7 +157,7 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
   - 预览**挂进节点行内**（`syncImages` 把 `.node-images` 插到 `.text` 之前），图片就是这一行的内容，上方不再多出一条空行；正文有字的节点仍挂在行下方。
   - 未聚焦时 `.text` 透明。刻意**不用 `display:none`**：那样 `restoreCaret` 与点击都聚焦不上，节点会变成改不动的死块。透明的正文仍是图片右侧的点击区，点它即回源码态。
   - 必须配 `white-space: nowrap; overflow: hidden`——**透明 ≠ 不占位**，长 data: URI 源码会换行把整行撑到几十像素高（实机看到的怪空行就是它）。
-- **放大预览**：点 `img.node-image` → `openLightbox`（全屏浮层，点浮层任意处 / `Esc` 关闭）。纯渲染层，不发消息。
+- **放大预览**：点 `img.node-image` → `openLightbox`（全屏浮层，点浮层任意处 / `Esc` 关闭）。纯渲染层，不发消息。**关闭时把光标送回该图片所在节点正文末尾**（`onLightboxClosed`）——否则「点图 → Esc」之后焦点悬空，图片节点没有键盘出口，连建个同级节点都做不到（实机反馈）。
 - **孤儿清理**：**不挂在「删节点」上**（删节点可 undo、删文件不可，一耦合 undo 回来就是「正文在、图没了」）。两条入口，都只在本文档自己的 assets 目录里动手：
   - **保存时自动**（`outlineNode.cleanupUnusedImagesOnSave`，默认开）：只删扩展自己生成的 `pasted-*` 孤儿，移废纸篓，状态栏提示 4 秒。延到保存 = 给 undo 留窗口（撤销后再保存，引用回来了就不算孤儿）。
   - **显式命令** `outlineNode.cleanupImages`：该目录下所有未被引用的图片，带确认弹窗。
@@ -200,4 +221,11 @@ Workflowy 式 `/` 菜单：在正文（`text` 字段）词首（行首或空白�
 
 ## 热恢复（main.ts）
 
-`vscode.setState` 持久化 `{ zoomRootKey, searchQuery, scrollTop, caret: CaretPos | null }`（caret 中 nodeId 换存 nodeKey）。webview revival → `ready` → 收到 `init` → 按 state 恢复 zoom/搜索/滚动/光标。
+`vscode.setState` 持久化 `{ zoomRootKey, scrollTop, hideCompleted, sidebarCollapsed, sidebarSections }`（zoom 存 nodeKey 而非 id）。webview revival → `ready` → 收到 `init` → 按 state 恢复 zoom/滚动/隐藏已完成/侧栏。全是 UI 态，只进 `setState`，绝不写 `.md`（红线 3）。
+
+## 侧栏（sidebar.ts）
+
+- 结构：`Starred`（有书签时才出现）→ `Home` + 其下的可展开大纲树。**`Home` 就是大纲区的标题行**：三角折叠整区、文字点击回全文档、zoom 在根时自身高亮——刻意不再单列一行 Home 再加一个 Outline 小标题（实机反馈：同一含义占两行）。分区标题都是折叠开关（`aria-expanded`），折叠键 `'starred'` / `'outline'` 随 `ViewState.sidebarSections` 持久化——收起 Starred 即可消掉「同一节点在两区各列一次」的重复观感。
+- 缩进基准 `INDENT_BASE_PX = 17`（sidebar.ts）必须与 `.sidebar-item` 的 `padding-left: calc(17px + depth * 13px)` 一致：拖拽落点深度就是用横向像素反算的，改一处必须改另一处（测试 `dragSidebar` 里也有一份）。
+- 侧栏树的展开状态独立于主编辑区折叠，只存 webview 内存；渲染项封顶 `MAX_ITEMS`，护住 refresh patch 的性能红线（见 07）。
+- 观感约定：`Starred` 与 `Home` 是并列的一级入口，**必须同字号、同字重、同行高、同三角位**（两者排版不一致会立刻显得「样式不对」，实机否掉过一版）；当前位置用「淡底 + 左侧 2px 竖条 + 字重」，不用通栏 `list-activeSelectionBackground` 色块；星标/三角默认低透明度，hover 才提亮；层级除缩进外每级再降 12% 不透明度（最多两级）。颜色一律走 `--vscode-*`（见本文档开头的主题约定）。

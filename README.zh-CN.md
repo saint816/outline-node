@@ -95,3 +95,5 @@ macOS 用 `Cmd`，Windows / Linux 用 `Ctrl`。
 ## License
 
 MIT
+
+内置的第三方代码：[Prism](https://prismjs.com/)（MIT）——代码块语法高亮。扩展的 CSP 不允许外链 CDN，所以它被打进 webview bundle。

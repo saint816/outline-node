@@ -18,7 +18,7 @@ interface PostedWindow {
   __posted: { type: string; bookmarkKeys?: string[] }[];
 }
 
-/** 拖侧栏某一行到目标行下沿；depth 由横向位置换算（步长 13px，基准 4px，与 styles.css 一致）。 */
+/** 拖侧栏某一行到目标行下沿；depth 由横向位置换算（步长 13px，基准 17px，与 styles.css 一致）。 */
 async function dragSidebar(
   page: Page,
   fromId: string,
@@ -29,7 +29,7 @@ async function dragSidebar(
   const to = await page.locator(`.sidebar-item[data-id="${toId}"]`).boundingBox();
   const body = await page.locator('.sidebar-body').boundingBox();
   if (!from || !to || !body) throw new Error('missing sidebar element');
-  const targetX = body.x + 4 + (opts.depth ?? 0) * 13 + 4;
+  const targetX = body.x + 17 + (opts.depth ?? 0) * 13 + 4;
 
   // 从行左侧起手（避开右端的星标按钮）
   await page.mouse.move(from.x + 18, from.y + from.height / 2);
@@ -148,6 +148,86 @@ test('星标：进入 Starred 区、节流上报 saveBookmarks，reopen 后按 n
     config: CONFIG,
   });
   await expect(page.locator('.sidebar-section', { hasText: 'Starred' })).toBeVisible();
+});
+
+// 分区标题即折叠开关；Home 就是大纲区的标题行（不再单列一行），三角折叠、文字回全文档。
+test('侧栏分区可折叠，且状态存进 ViewState', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta')]);
+  await page.locator('.sidebar-item', { hasText: 'Alpha' }).locator('.sidebar-star').click();
+  // Starred 里的 Alpha + Home（大纲区标题）+ 大纲的 Alpha/Beta
+  await expect(page.locator('.sidebar-label')).toHaveText(['Alpha', 'Home', 'Alpha', 'Beta']);
+
+  await page.locator('.sidebar-section[data-section="starred"]').click();
+  await expect(page.locator('.sidebar-label')).toHaveText(['Home', 'Alpha', 'Beta']);
+  await expect(page.locator('.sidebar-section[data-section="starred"]')).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  );
+
+  // 折叠大纲区：Home 这行自己留着（它就是标题），树收起来
+  await page.locator('.sidebar-toggle[data-section="outline"]').click();
+  await expect(page.locator('.sidebar-label')).toHaveText(['Home']);
+
+  const saved = await page.evaluate(
+    () => (window as never as { __state?: { sidebarSections?: string[] } }).__state?.sidebarSections,
+  );
+  expect(saved?.slice().sort()).toEqual(['outline', 'starred']);
+
+  await page.locator('.sidebar-section[data-section="starred"]').click();
+  await expect(page.locator('.sidebar-label')).toHaveText(['Alpha', 'Home']);
+});
+
+test('Home 只出现一次，且点它回到全文档', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha', [node('a1', 'A1')])]);
+  await expect(page.locator('.sidebar-label', { hasText: /^Home$/ })).toHaveCount(1);
+
+  await page.locator('.sidebar-item[data-id="a"] .sidebar-label').click();
+  await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Alpha']);
+
+  await page.locator('.sidebar-home .sidebar-label').click();
+  await expect(page.locator('.breadcrumb .crumb')).toHaveCount(0);
+  // Home 是常驻入口，不是「当前位置」：任何时候都不打 .active（常年高亮像误选中）
+  await expect(page.locator('.sidebar-home')).not.toHaveClass(/active/);
+});
+
+// 侧栏每次 render 整栏重建：行上若有 hover 过渡，展开一个节点时鼠标下那行会「闪一下」
+// （过渡从头重播）。这里锁死「侧栏行内元素不带过渡」，避免以后又加回来。
+test('侧栏行不带 hover 过渡（重建时会重播成闪烁）', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha', [node('a1', 'A1')])]);
+  await page.locator('.sidebar-item[data-id="a"] .sidebar-star').click();
+  // 星标后侧栏重渲染是异步的，等 Starred 区出现再读样式（evaluate 不会自动重试）
+  await expect(page.locator('.sidebar-section')).toBeVisible();
+
+  const durations = await page.evaluate(() =>
+    ['.sidebar-item', '.sidebar-section', '.sidebar-toggle', '.sidebar-star', '.sidebar-label'].map(
+      (sel) => getComputedStyle(document.querySelector(sel)!).transitionDuration,
+    ),
+  );
+  expect(durations).toEqual(['0s', '0s', '0s', '0s', '0s']);
+});
+
+// 分区标题是 font-weight:600 的 button、树行三角是默认字体的 button：不显式对齐字体三件套，
+// 两个 ▸ 会渲染成明显不同的大小（实机反馈）。
+test('分区三角与节点三角字体一致', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha', [node('a1', 'A1')])]);
+  await page.locator('.sidebar-item[data-id="a"] .sidebar-star').click();
+
+  const font = (sel: string): Promise<string> =>
+    page.locator(sel).first().evaluate((el) => {
+      const css = getComputedStyle(el);
+      return `${css.fontSize}|${css.fontWeight}|${css.fontFamily}`;
+    });
+
+  expect(await font('.sidebar-section-caret')).toBe(await font('.sidebar-toggle'));
+
+  // 两种三角 hover 都要提亮（分区三角曾经只有节点三角有 hover）。
+  // 提亮带 80ms 过渡，用 poll 等它走完，别读到中间值。
+  const opacity = (sel: string) => (): Promise<string> =>
+    page.locator(sel).first().evaluate((el) => getComputedStyle(el).opacity);
+  await page.locator('.sidebar-section').first().hover();
+  await expect.poll(opacity('.sidebar-section-caret')).toBe('1');
+  await page.locator('.sidebar-item[data-id="a"]').hover();
+  await expect.poll(opacity('.sidebar-item[data-id="a"] .sidebar-toggle')).toBe('1');
 });
 
 test('Ctrl+O 隐藏已完成节点（连整棵子树），再按恢复', async ({ page }) => {

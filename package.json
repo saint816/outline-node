@@ -2,7 +2,7 @@
   "name": "outline-node",
   "displayName": "OutlineNode — Workflowy-style Outliner",
   "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "license": "MIT",
   "publisher": "outlinenode",
   "icon": "media/icon.png",
@@ -159,12 +159,14 @@
     }
   },
   "dependencies": {
-    "nanoid": "^5.0.9"
+    "nanoid": "^5.0.9",
+    "prismjs": "^1.30.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@playwright/test": "^1.61.1",
     "@types/node": "^20.14.0",
+    "@types/prismjs": "^1.26.6",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.9.2",

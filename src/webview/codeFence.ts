@@ -1,6 +1,9 @@
 // 围栏代码块的解析与渲染，顶层代码块（文档级 RawBlock）与节点代码块（节点的 note）共用。
 // 两条路径唯一的差别是 textarea 的 data-field：'code' 走 setRawBlock，'noteCode' 走 setNote。
 
+import { canHighlight, renderHighlight } from './highlight.js';
+import { t } from './i18n.js';
+
 const FENCE_OPEN_RE = /^[ \t]*(`{3,}|~{3,})(.*)$/;
 
 export interface CodeFence {
@@ -53,13 +56,23 @@ export function renderFence(el: HTMLElement, fence: CodeFence, field: 'code' | '
   if (el.dataset.codeSig === sig) return; // 内容没变就不重建，避免打断输入 / 闪烁
   el.dataset.codeSig = sig;
 
-  const parts: HTMLElement[] = [];
-  if (fence.lang) {
-    const label = document.createElement('span');
-    label.className = 'code-lang';
-    label.textContent = fence.lang;
-    parts.push(label);
-  }
+  // 头部：语言徽标 + 复制按钮（按钮常驻 DOM，靠 CSS 在 hover/focus 时才显形）
+  const head = document.createElement('div');
+  head.className = 'code-head';
+  const label = document.createElement('span');
+  label.className = 'code-lang';
+  label.textContent = fence.lang;
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'code-copy';
+  copy.dataset.action = 'copy-code';
+  copy.textContent = t('code.copy');
+  copy.setAttribute('aria-label', t('code.copy'));
+  head.append(label, copy);
+
+  // 正文：高亮层（只读、aria-hidden）压在透明文字的 textarea 之下，两层字体/内边距必须一致
+  const body = document.createElement('div');
+  body.className = 'code-body';
   const area = document.createElement('textarea');
   area.className = 'code-input';
   area.dataset.field = field;
@@ -67,6 +80,24 @@ export function renderFence(el: HTMLElement, fence: CodeFence, field: 'code' | '
   area.wrap = 'off';
   area.value = fence.code;
   area.rows = Math.max(1, fence.code.split('\n').length);
-  parts.push(area);
-  el.replaceChildren(...parts);
+
+  if (canHighlight(fence.lang)) {
+    const hl = document.createElement('pre');
+    hl.className = 'code-hl';
+    hl.setAttribute('aria-hidden', 'true');
+    renderHighlight(hl, fence.code, fence.lang);
+    body.append(hl);
+    el.classList.add('highlighted');
+  } else {
+    el.classList.remove('highlighted');
+  }
+  body.append(area);
+  el.replaceChildren(head, body);
+}
+
+/** 打字热路径：只重画高亮层，不重建代码块 DOM（重建会打断输入）。 */
+export function syncHighlight(block: HTMLElement, code: string): void {
+  const hl = block.querySelector<HTMLElement>('.code-hl');
+  if (hl === null) return;
+  renderHighlight(hl, code, block.querySelector('.code-lang')?.textContent ?? '');
 }

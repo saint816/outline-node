@@ -96,3 +96,5 @@ See [AGENTS.md](AGENTS.md) and [docs/](docs/) for the full technical specificati
 ## License
 
 MIT
+
+Bundled third-party code: [Prism](https://prismjs.com/) (MIT) — syntax highlighting for code blocks, bundled into the webview because the extension's CSP forbids loading anything from a CDN.

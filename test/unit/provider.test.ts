@@ -196,6 +196,16 @@ describe('provider ↔ session 端到端', () => {
     );
   });
 
+  // 复制按钮走宿主剪贴板：webview 里的 navigator.clipboard / execCommand 有静默失败前科
+  it('copyText：写进 VS Code 剪贴板，不碰文档', async () => {
+    const harness = openEditor('- a\n');
+    await harness.send({ type: 'copyText', text: 'const n = 42;' });
+
+    expect(registry.clipboard).toEqual(['const n = 42;']);
+    expect(registry.writes).toHaveLength(0);
+    expect(harness.document.getText()).toBe('- a\n');
+  });
+
   it('saveImage：带目录的名字先建目录再写盘（图片进 <文件名>/assets/）', async () => {
     const harness = openEditor('- a\n');
     const dataBase64 = Buffer.from('PNG').toString('base64');

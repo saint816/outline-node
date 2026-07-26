@@ -3,7 +3,7 @@ import './styles.css';
 import { nanoid } from 'nanoid';
 import { asH2W, type H2W, type W2H } from '../shared/protocol.js';
 import { activeEditable, restoreCaret, saveCaret, type CaretPos } from './caret.js';
-import { fenceLinesFrom } from './codeFence.js';
+import { fenceLinesFrom, syncHighlight } from './codeFence.js';
 import { ime, installImeGuard } from './ime.js';
 import { handleKeydown } from './keymap.js';
 import { t } from './i18n.js';
@@ -17,7 +17,7 @@ import { Breadcrumb } from './zoom.js';
 import { SidebarView } from './sidebar.js';
 import { Toolbar } from './toolbar.js';
 import { HelpOverlay } from './help.js';
-import { closeLightbox, handleImageClick, isLightboxOpen } from './lightbox.js';
+import { closeLightbox, handleImageClick, isLightboxOpen, onLightboxClosed } from './lightbox.js';
 import { isMac } from './platform.js';
 import { SlashMenu } from './slashMenu.js';
 import { NodeSelection, handleSelectionKeydown } from './selection.js';
@@ -35,6 +35,8 @@ interface ViewState {
   scrollTop: number;
   hideCompleted: boolean;
   sidebarCollapsed: boolean;
+  /** 被折叠的侧栏分区键（'starred' / 'outline'）。 */
+  sidebarSections: string[];
 }
 
 const vscode = acquireVsCodeApi();
@@ -53,6 +55,7 @@ function navigate(id: string | null): void {
 }
 
 let sidebarCollapsed = false;
+let sidebarSections: string[] = [];
 
 const breadcrumb = new Breadcrumb((id) => navigate(id));
 const search = new SearchBox((query) => store.setSearchQuery(query));
@@ -66,6 +69,10 @@ const sidebar = new SidebarView({
     render();
   },
   onMove: (id, parentId, index) => store.dispatch({ op: 'move', id, parentId, index }),
+  onSectionsChanged: (keys) => {
+    sidebarSections = [...keys];
+    saveViewState();
+  },
 });
 const toolbar = new Toolbar(
   {
@@ -86,6 +93,10 @@ mainCol.className = 'main-col';
 mainCol.append(toolbar.el, breadcrumb.el, root);
 app.append(sidebar.el, mainCol);
 document.body.append(app);
+
+// 点图放大 → 关掉浮层：光标回到该节点正文末尾，接着按 Enter 就能建同级节点。
+// 否则「点图 → Esc」之后焦点悬空，图片节点等于没有键盘出口（实机反馈）。
+onLightboxClosed((nodeId) => focusNodeText(nodeId));
 
 let nextCaret: CaretPos | null = null;
 /** patch 之后把光标放到这里（结构 op 前记录，见 docs/04）。 */
@@ -318,6 +329,7 @@ function commitCodeBlock(target: HTMLElement): void {
   const blockId = block?.dataset.blockId;
   if (!block || !blockId) return;
   autoGrow(target);
+  syncHighlight(block, target.value);
   store.setRawBlockLines(blockId, fenceLinesFrom(block, target.value));
 }
 
@@ -328,6 +340,7 @@ function commitNoteCode(target: HTMLElement): void {
   const id = target.closest<HTMLElement>('.node')?.dataset.id;
   if (!block || !id) return;
   autoGrow(target);
+  syncHighlight(block, target.value);
   store.setNodeNote(id, fenceLinesFrom(block, target.value).join('\n'));
 }
 
@@ -343,12 +356,28 @@ root.addEventListener('beforeinput', (event) => {
   if (inputType === 'historyUndo' || inputType === 'historyRedo') event.preventDefault();
 });
 
+/** 代码块 textarea 内部自理的按键（不带修饰键时不交给 keymap）。 */
+const CODE_LOCAL_KEYS = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Enter',
+  'Backspace',
+  'Delete',
+  'Home',
+  'End',
+]);
+
 root.addEventListener('keydown', (event) => {
   // 代码块 textarea 的出口手势（keymap 对 textarea 不生效，saveCaret 返回 null）
   const target = event.target;
   if (target instanceof HTMLTextAreaElement) {
     if (target.dataset.field === 'code' && handleCodeBlockKeydown(event, target)) return;
     if (target.dataset.field === 'noteCode' && handleNoteCodeKeydown(event, target)) return;
+    // 没被出口手势消费的方向键/回车归 textarea 自己：keymap 的跨节点 ↑↓ 不认识
+    // textarea 的行结构，会在代码块中间行就把光标弹到别的节点去。
+    if (CODE_LOCAL_KEYS.has(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) return;
   }
   // 斜杠菜单激活时优先吃掉导航键（↑↓/Enter/Tab/Esc），keymap 不再处理
   if (event.key !== 'Process' && !event.isComposing && slashMenu.handleKeydown(event)) return;
@@ -386,6 +415,15 @@ function handleCodeBlockKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): bo
     const id = nanoid();
     nextCaret = { nodeId: id, field: 'text', offset: 0 };
     store.dispatch({ op: 'insertRootAfterBlock', afterBlockId: blockId, id, blockId: nanoid() });
+    return true;
+  }
+
+  // Esc：退到相邻节点正文（与节点代码块的出口手势一致）
+  if (e.key === 'Escape') {
+    const neighbor = adjacentNodeId(blockEl);
+    if (neighbor === null) return false;
+    e.preventDefault();
+    focusNodeText(neighbor);
     return true;
   }
 
@@ -432,7 +470,54 @@ function handleNoteCodeKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): boo
     store.dispatch({ op: 'setNote', id, note: null });
     return true;
   }
+
+  // 出口手势：Esc 回到本节点正文；末行 ↓ 去下一个可见节点；首行 ↑ 回本节点正文。
+  // 没有这几条，代码块就是个只进不出的坑（实机反馈：编辑完跳不出来）。
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    focusNodeText(id);
+    return true;
+  }
+  if (e.key === 'ArrowUp' && atFirstLine(area)) {
+    e.preventDefault();
+    focusNodeText(id);
+    return true;
+  }
+  if (e.key === 'ArrowDown' && atLastLine(area)) {
+    const next = nextVisibleNodeId(id);
+    if (next === null) return false;
+    e.preventDefault();
+    focusNodeText(next, 0);
+    return true;
+  }
   return false;
+}
+
+/** textarea 光标是否在首行 / 末行（跨节点移动的判据，和正文的 ↑↓ 同一套直觉）。 */
+function atFirstLine(area: HTMLTextAreaElement): boolean {
+  return area.selectionStart === area.selectionEnd && !area.value.slice(0, area.selectionStart).includes('\n');
+}
+
+function atLastLine(area: HTMLTextAreaElement): boolean {
+  return area.selectionStart === area.selectionEnd && !area.value.slice(area.selectionEnd).includes('\n');
+}
+
+/** 文档序里 id 之后的下一个可见节点。 */
+function nextVisibleNodeId(id: string): string | null {
+  const rows = store.visibleRows();
+  const index = rows.findIndex((row) => row.node.id === id);
+  return index >= 0 ? (rows[index + 1]?.node.id ?? null) : null;
+}
+
+/** 把光标放进某个节点的正文（默认末尾）；节点不在 DOM 里就留到下一帧。 */
+function focusNodeText(nodeId: string, offset?: number): void {
+  const node = store.findNode(nodeId);
+  const pos: CaretPos = { nodeId, field: 'text', offset: offset ?? node?.text.length ?? 0 };
+  const el = root.querySelector<HTMLElement>(
+    `.node[data-id="${nodeId.replace(/["\\]/g, '\\$&')}"] > .node-row > [data-field="text"]`,
+  );
+  if (el) restoreCaret(pos);
+  else setNextCaret(pos);
 }
 
 function noteCodeAreaOf(nodeId: string): HTMLTextAreaElement | null {
@@ -556,6 +641,39 @@ root.addEventListener('click', (event) => {
     navigate(id);
   }
 });
+
+// 长行横向滚动时，高亮层要跟着 textarea 走，否则两层错开。scroll 不冒泡，挂捕获阶段。
+root.addEventListener(
+  'scroll',
+  (event) => {
+    const area = event.target;
+    if (!(area instanceof HTMLTextAreaElement) || !area.classList.contains('code-input')) return;
+    const hl = area.closest<HTMLElement>('.raw-block')?.querySelector<HTMLElement>('.code-hl');
+    if (hl) hl.scrollLeft = area.scrollLeft;
+  },
+  true,
+);
+
+// 代码块的复制按钮：委托到 root，读同一块里的 textarea 值，交给宿主写系统剪贴板。
+// 刻意不用 navigator.clipboard / execCommand —— 它们在 VS Code webview 里静默失败过（见 docs/11）。
+root.addEventListener('click', (event) => {
+  const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-action="copy-code"]');
+  if (!btn) return;
+  const area = btn.closest<HTMLElement>('.raw-block, .node-code')?.querySelector('textarea.code-input');
+  if (!(area instanceof HTMLTextAreaElement)) return;
+  event.preventDefault();
+  send({ type: 'copyText', text: area.value });
+  btn.textContent = t('code.copied');
+  btn.classList.add('done');
+  window.setTimeout(() => {
+    btn.textContent = t('code.copy');
+    btn.classList.remove('done');
+  }, 1200);
+});
+
+// 侧栏是纯导航面板，没有可编辑内容：吞掉右键，避免弹出 webview 的原生 Cut/Copy/Paste
+// （那三项在侧栏里全是无效操作，实机反馈）。
+sidebar.el.addEventListener('contextmenu', (event) => event.preventDefault());
 
 // 右键菜单：复制为镜像链接（见 docs/06 创建入口）
 root.addEventListener('contextmenu', (event) => {
@@ -689,6 +807,7 @@ function saveViewState(): void {
     scrollTop: window.scrollY,
     hideCompleted: store.hideCompleted,
     sidebarCollapsed,
+    sidebarSections,
   };
   vscode.setState(state);
 }
@@ -698,6 +817,10 @@ function restoreViewState(): void {
   if (!state) return;
   if (typeof state.hideCompleted === 'boolean') store.setHideCompleted(state.hideCompleted);
   if (typeof state.sidebarCollapsed === 'boolean') sidebarCollapsed = state.sidebarCollapsed;
+  if (Array.isArray(state.sidebarSections)) {
+    sidebarSections = state.sidebarSections.filter((k): k is string => typeof k === 'string');
+    sidebar.restoreSections(sidebarSections);
+  }
   if (typeof state.zoomRootKey === 'string') {
     const id = store.idForKey(state.zoomRootKey);
     if (id) navigate(id);

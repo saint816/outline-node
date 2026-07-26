@@ -59,7 +59,9 @@ export type W2H =
   | { type: 'saveFolding'; foldedKeys: string[] }
   | { type: 'saveBookmarks'; bookmarkKeys: string[] }
   /** 粘贴/拖入图片：host 把 base64 字节写到文档同目录的 name 文件（见 docs/04）。 */
-  | { type: 'saveImage'; name: string; dataBase64: string };
+  | { type: 'saveImage'; name: string; dataBase64: string }
+  /** 代码块的复制按钮：走宿主的 vscode.env.clipboard，不依赖 webview 里的浏览器剪贴板 API。 */
+  | { type: 'copyText'; text: string };
 
 // ---------- host → webview ----------
 
@@ -111,6 +113,8 @@ export function asW2H(raw: unknown): W2H | null {
       return typeof raw.name === 'string' && typeof raw.dataBase64 === 'string'
         ? { type: 'saveImage', name: raw.name, dataBase64: raw.dataBase64 }
         : null;
+    case 'copyText':
+      return typeof raw.text === 'string' ? { type: 'copyText', text: raw.text } : null;
     default:
       return null;
   }

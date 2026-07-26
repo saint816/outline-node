@@ -29,10 +29,10 @@ body {
   width: var(--sidebar-width);
   box-sizing: border-box;
   overflow-y: auto;
-  padding: 6px 0 20px;
+  padding: 6px 6px 20px;
   border-right: 1px solid var(--vscode-panel-border);
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
-  font-size: 0.92em;
+  font-size: 0.95em;
 }
 
 .sidebar.collapsed {
@@ -468,28 +468,148 @@ body {
   flex: 1 0 100%;
 }
 
-/* 可编辑代码块正文 */
+/* 代码块头部：语言徽标 + 复制按钮 */
+.code-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.code-copy {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-toolbar-hoverBackground));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-descriptionForeground));
+  font: inherit;
+  font-size: 0.78em;
+  cursor: pointer;
+  opacity: 0;
+}
+
+/* 常驻 DOM、按需显形：hover / 块内有焦点 / 刚复制完（done）都要看得见，
+   键盘用户靠 focus-visible 也能摸到。 */
+.raw-block.code-block:hover .code-copy,
+.raw-block.code-block:focus-within .code-copy,
+.code-copy:focus-visible,
+.code-copy.done {
+  opacity: 1;
+}
+
+.code-copy:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+/* 高亮层与 textarea 严格叠在一起：字体三件套、padding、border、white-space 必须逐条一致，
+   差一个像素整块代码就会「重影」。改任一条都要两边一起改。 */
+.code-body {
+  position: relative;
+}
+
+.raw-block.code-block .code-hl,
 .raw-block.code-block .code-input {
-  display: block;
-  width: 100%;
   box-sizing: border-box;
   margin: 0;
   padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 4px;
-  resize: none;
-  overflow: hidden;
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: 0.9em;
   line-height: 1.4;
+  letter-spacing: normal;
+  tab-size: 4;
   white-space: pre;
+}
+
+.raw-block.code-block .code-hl {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
   color: var(--vscode-editor-foreground);
   background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+}
+
+.raw-block.code-block .code-input {
+  display: block;
+  position: relative;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  color: var(--vscode-editor-foreground);
+  caret-color: var(--vscode-editorCursor-foreground);
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+}
+
+/* 有高亮层时 textarea 只留光标与选区：文字交给下面那层画 */
+.raw-block.code-block.highlighted .code-input {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: transparent;
 }
 
 .raw-block.code-block .code-input:focus {
   outline: none;
   border-color: var(--vscode-focusBorder);
+}
+
+/* Prism token 配色：一律走主题变量（charts.* 主选，终端 ANSI 兜底），两者都是 VS Code
+   注册色、随主题明暗自适应。刻意不写字面色兜底——本文件禁止硬编码颜色（theme.test.ts 守着）。
+   代价是：万一某天两组变量都拿不到，高亮会整块退化成纯文本（不会报错、不会串色）。 */
+.code-hl .token.comment,
+.code-hl .token.prolog,
+.code-hl .token.doctype,
+.code-hl .token.cdata {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.code-hl .token.punctuation,
+.code-hl .token.operator {
+  color: var(--vscode-editor-foreground);
+  opacity: 0.75;
+}
+
+.code-hl .token.keyword,
+.code-hl .token.atrule,
+.code-hl .token.rule,
+.code-hl .token.important {
+  color: var(--vscode-charts-purple, var(--vscode-terminal-ansiMagenta));
+}
+
+.code-hl .token.string,
+.code-hl .token.char,
+.code-hl .token.attr-value,
+.code-hl .token.regex {
+  color: var(--vscode-charts-orange, var(--vscode-terminal-ansiYellow));
+}
+
+.code-hl .token.number,
+.code-hl .token.boolean,
+.code-hl .token.constant,
+.code-hl .token.symbol {
+  color: var(--vscode-charts-green, var(--vscode-terminal-ansiGreen));
+}
+
+.code-hl .token.function,
+.code-hl .token.class-name,
+.code-hl .token.builtin {
+  color: var(--vscode-charts-yellow, var(--vscode-terminal-ansiYellow));
+}
+
+.code-hl .token.tag,
+.code-hl .token.selector,
+.code-hl .token.property,
+.code-hl .token.attr-name,
+.code-hl .token.variable,
+.code-hl .token.parameter {
+  color: var(--vscode-charts-blue, var(--vscode-terminal-ansiBlue));
+}
+
+.code-hl .token.deleted {
+  color: var(--vscode-charts-red, var(--vscode-terminal-ansiRed));
 }
 
 .placeholder {
@@ -705,26 +825,85 @@ body {
 
 .sidebar-collapse {
   display: block;
-  margin: 0 4px 4px auto;
-  width: 22px;
-  height: 22px;
+  margin: 0 6px 8px auto;
+  width: 24px;
+  height: 24px;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   background: none;
   color: var(--vscode-descriptionForeground);
+  font-size: 13px;
+  line-height: 24px;
+  opacity: 0.6;
   cursor: pointer;
+  transition: opacity 80ms linear;
+}
+
+.sidebar:hover .sidebar-collapse,
+.sidebar-collapse:focus-visible {
+  opacity: 1;
 }
 
 .sidebar-collapse:hover {
   background: var(--vscode-toolbar-hoverBackground);
 }
 
+/* 分区标题（Starred）：与 Home 行同一套排版 —— 同字号、同字重、同行高、同三角位。
+   两者是并列的一级入口，长得不一样会立刻显得「样式不对」（实机反馈）。 */
 .sidebar-section {
-  padding: 10px 12px 2px;
-  font-size: 0.82em;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 26px;
+  margin-top: 10px;
+  padding: 0 6px 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* 侧栏行在每次 render 里整栏重建（sidebar.ts）：hover 态的过渡会随重建从头重播，
+   点开一个节点时鼠标下那行就会「闪一下」。所以侧栏一律不给 hover 加过渡（实机反馈）。 */
+
+.sidebar-section:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* 与 .sidebar-label 同一套内边距：Starred 与 Home 的文字必须落在同一列 */
+.sidebar-section-label {
+  padding: 4px 6px 4px 2px;
+}
+
+/* 分区三角常亮：hover 时再改它的透明度，整行会「闪一下」（实机反馈）。
+   字体三件套写死：分区标题是 font-weight:600 的 button、树行三角是默认字体的 button，
+   不显式对齐就会渲染出两种大小的 ▸（实机反馈）。 */
+.sidebar-section-caret,
+.sidebar-toggle {
+  font-family: var(--vscode-font-family);
+  font-size: 1.8em;
+  font-weight: 400;
+  line-height: 1;
+  transform: translateY(-0.08em);
+}
+
+.sidebar-section-caret {
+  flex: 0 0 auto;
+  width: 15px;
+  text-align: center;
   color: var(--vscode-descriptionForeground);
+  opacity: 0.75;
+}
+
+.sidebar-section:hover .sidebar-section-caret {
+  opacity: 1;
+  color: var(--vscode-foreground, var(--vscode-editor-foreground));
 }
 
 .sidebar-empty {
@@ -739,11 +918,24 @@ body {
 }
 
 .sidebar-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
-  /* 按树深度缩进（--depth 由 JS 设置） */
-  padding: 0 6px 0 calc(4px + var(--depth, 0) * 13px);
+  min-height: 26px;
+  /* 按树深度缩进（--depth 由 JS 设置）；基准 17px = 缩进到分区标题（Starred / Home）之下 */
+  padding: 0 6px 0 calc(17px + var(--depth, 0) * 13px);
+}
+
+/* Home 自己就是分区标题（与 Starred 并列），不跟着缩进 */
+.sidebar-item.sidebar-home {
+  margin-top: 10px;
+  padding-left: 4px;
+}
+
+/* 层级越深越淡：靠明度而不是缩进独扛层级信息（Workflowy 的做法） */
+.sidebar-item .sidebar-label {
+  opacity: calc(1 - 0.12 * min(var(--depth, 0), 2));
 }
 
 .sidebar-item.sidebar-draggable {
@@ -756,17 +948,20 @@ body {
 
 .sidebar-toggle {
   flex: 0 0 auto;
-  width: 14px;
-  height: 20px;
+  width: 15px;
   padding: 0;
   border: none;
   border-radius: 3px;
   background: none;
   color: var(--vscode-descriptionForeground);
-  font-size: 9px;
-  line-height: 20px;
   text-align: center;
+  opacity: 0.75;
   cursor: pointer;
+}
+
+.sidebar-item:hover > .sidebar-toggle,
+.sidebar-toggle[aria-expanded='true'] {
+  opacity: 1;
 }
 
 .sidebar-toggle.spacer {
@@ -779,17 +974,34 @@ body {
   color: var(--vscode-foreground, var(--vscode-editor-foreground));
 }
 
+/* 当前位置：左侧竖条 + 极淡底色 + 字重，不用整条通栏高亮（那个色块在深色主题里太抢眼） */
 .sidebar-item.active {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
-  border-radius: 3px;
+  background: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground));
+  border-radius: 4px;
+}
+
+.sidebar-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+}
+
+.sidebar-item.active > .sidebar-label {
+  font-weight: 600;
+  opacity: 1;
 }
 
 .sidebar-label {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 3px 6px;
+  padding: 4px 6px 4px 2px;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   background: none;
   color: inherit;
   font: inherit;
@@ -800,8 +1012,9 @@ body {
   cursor: pointer;
 }
 
-.sidebar-item:not(.active) .sidebar-label:hover {
+.sidebar-item:not(.active):hover {
   background: var(--vscode-list-hoverBackground);
+  border-radius: 4px;
 }
 
 .sidebar-home .sidebar-label {
@@ -811,12 +1024,13 @@ body {
 .sidebar-star {
   flex: 0 0 auto;
   width: 18px;
+  padding: 0;
   border: none;
   background: none;
   color: var(--vscode-descriptionForeground);
+  font-size: 11px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 80ms linear;
 }
 
 .sidebar-item:hover .sidebar-star,
@@ -826,7 +1040,12 @@ body {
 }
 
 .sidebar-star.on {
-  color: var(--vscode-list-highlightForeground, var(--vscode-textLink-foreground));
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.65;
+}
+
+.sidebar-item:hover .sidebar-star.on {
+  opacity: 1;
 }
 
 /* ---------- 帮助浮层 ---------- */

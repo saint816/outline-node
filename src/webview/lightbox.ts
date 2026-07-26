@@ -2,6 +2,14 @@
 // 纯渲染层，不改数据、不发消息；图片沿用已解析好的 src（同一条 CSP img-src 白名单）。
 
 let overlay: HTMLElement | null = null;
+/** 关闭后要把光标送回的节点 id：点图放大再关掉，焦点不该凭空消失（实机反馈）。 */
+let originNodeId: string | null = null;
+let onClosed: ((nodeId: string) => void) | null = null;
+
+/** 注册「浮层关闭后把光标放回该节点正文」的回调（main.ts 注入，lightbox 不碰 store）。 */
+export function onLightboxClosed(cb: (nodeId: string) => void): void {
+  onClosed = cb;
+}
 
 export function isLightboxOpen(): boolean {
   return overlay !== null;
@@ -10,10 +18,14 @@ export function isLightboxOpen(): boolean {
 export function closeLightbox(): void {
   overlay?.remove();
   overlay = null;
+  const id = originNodeId;
+  originNodeId = null;
+  if (id !== null) onClosed?.(id);
 }
 
-export function openLightbox(src: string, alt: string): void {
+export function openLightbox(src: string, alt: string, nodeId: string | null = null): void {
   closeLightbox();
+  originNodeId = nodeId;
   const el = document.createElement('div');
   el.className = 'image-lightbox';
   el.setAttribute('role', 'dialog');
@@ -35,6 +47,6 @@ export function handleImageClick(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLImageElement) || !target.classList.contains('node-image')) {
     return false;
   }
-  openLightbox(target.src, target.alt);
+  openLightbox(target.src, target.alt, target.closest<HTMLElement>('.node')?.dataset.id ?? null);
   return true;
 }

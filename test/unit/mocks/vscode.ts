@@ -124,6 +124,8 @@ export const registry = {
   dirs: new Map<string, string[]>(),
   /** window.showErrorMessage 的记录。 */
   errors: [] as string[],
+  /** env.clipboard.writeText 的记录（代码块复制按钮）。 */
+  clipboard: [] as string[],
   reset(): void {
     this.customEditors = [];
     this.commands.clear();
@@ -138,6 +140,7 @@ export const registry = {
     this.createdDirs = [];
     this.deletes = [];
     this.dirs.clear();
+    this.clipboard = [];
     window.activeTextEditor = undefined;
     window.tabGroups.activeTabGroup.activeTab = undefined;
   },
@@ -201,6 +204,11 @@ export const FileType = { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 } 
 
 export const env = {
   language: 'en',
+  clipboard: {
+    async writeText(text: string): Promise<void> {
+      registry.clipboard.push(text);
+    },
+  },
 };
 
 export const l10n = {
