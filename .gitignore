@@ -7,3 +7,6 @@ coverage/
 test-results/
 playwright-report/
 .vscode-test/
+
+# 本地手动测试用的笔记，不入库
+*.outline.md
