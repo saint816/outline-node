@@ -206,6 +206,22 @@ describe('provider ↔ session 端到端', () => {
     expect(harness.document.getText()).toBe('- a\n');
   });
 
+  // 链接来自 webview 里的文本，是不可信输入：只放行 http/https/mailto，
+  // 否则 vscode:、file: 这类 scheme 能被用来触发本地操作
+  it('openLink：http/https/mailto 交给 openExternal，其余 scheme 拒绝', async () => {
+    const harness = openEditor('- a\n');
+    await harness.send({ type: 'openLink', url: 'https://example.com/a' });
+    await harness.send({ type: 'openLink', url: 'mailto:a@b.c' });
+    expect(registry.opened).toEqual(['https://example.com/a', 'mailto:a@b.c']);
+
+    registry.opened = [];
+    for (const url of ['vscode://x', 'file:///etc/passwd', 'javascript:alert(1)', '不是链接']) {
+      await harness.send({ type: 'openLink', url });
+    }
+    expect(registry.opened).toEqual([]);
+    expect(registry.errors).toHaveLength(4);
+  });
+
   it('saveImage：带目录的名字先建目录再写盘（图片进 <文件名>/assets/）', async () => {
     const harness = openEditor('- a\n');
     const dataBase64 = Buffer.from('PNG').toString('base64');

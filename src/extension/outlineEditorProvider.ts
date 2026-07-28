@@ -58,6 +58,14 @@ export class OutlineEditorProvider implements vscode.CustomTextEditorProvider {
           void saveImageFile(document, webview, msg);
           return;
         }
+        if (msg.type === 'openLink') {
+          // 只放行 http(s)/mailto：webview 传来的字符串不可信，别让它触发任意 scheme
+          // （vscode:、file: 等能被用来做本地操作）
+          const uri = safeExternalUri(msg.url);
+          if (uri) void vscode.env.openExternal(uri);
+          else void vscode.window.showErrorMessage(vscode.l10n.t('OutlineNode: Unsupported link.'));
+          return;
+        }
         if (msg.type === 'copyText') {
           // 走宿主剪贴板：webview 里的 navigator.clipboard / execCommand 在 VS Code 下
           // 有过静默失败的前科（见 docs/11），复制这种「按了没反应」最难查
@@ -153,6 +161,16 @@ function safeRelativePath(name: string): string[] | null {
     if (seg === '' || seg === '.' || seg === '..' || !SAFE_SEGMENT.test(seg)) return null;
   }
   return segments;
+}
+
+/** 只允许 http / https / mailto 的外部链接；其余一律拒绝（见 handleMessage 处注释）。 */
+export function safeExternalUri(raw: string): vscode.Uri | null {
+  try {
+    const uri = vscode.Uri.parse(raw, true);
+    return ['http', 'https', 'mailto'].includes(uri.scheme.toLowerCase()) ? uri : null;
+  } catch {
+    return null;
+  }
 }
 
 async function saveImageFile(

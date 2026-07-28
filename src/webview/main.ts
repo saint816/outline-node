@@ -2,7 +2,16 @@
 import './styles.css';
 import { nanoid } from 'nanoid';
 import { asH2W, type H2W, type W2H } from '../shared/protocol.js';
-import { activeEditable, restoreCaret, saveCaret, type CaretPos } from './caret.js';
+import {
+  activeEditable,
+  focusAtOffset,
+  offsetFromPoint,
+  restoreCaret,
+  saveCaret,
+  selectRange,
+  selectionRange,
+  type CaretPos,
+} from './caret.js';
 import { fenceLinesFrom, parseFence, renderFence, syncHighlight } from './codeFence.js';
 import { LANGUAGES } from './highlight.js';
 import { ime, installImeGuard } from './ime.js';
@@ -19,6 +28,9 @@ import { SidebarView } from './sidebar.js';
 import { Toolbar } from './toolbar.js';
 import { HelpOverlay } from './help.js';
 import { closeLightbox, handleImageClick, isLightboxOpen, onLightboxClosed } from './lightbox.js';
+import { hasInlineMarkup, isRendered, renderInline, sourceOffset, toSourceMode } from './inline.js';
+import { toggleLink, toggleMarker, type Marker } from './format.js';
+import { FormatBar } from './formatBar.js';
 import { isMac } from './platform.js';
 import { SlashMenu } from './slashMenu.js';
 import { NodeSelection, handleSelectionKeydown } from './selection.js';
@@ -380,6 +392,15 @@ root.addEventListener('keydown', (event) => {
     // textarea 的行结构，会在代码块中间行就把光标弹到别的节点去。
     if (CODE_LOCAL_KEYS.has(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) return;
   }
+  // 排版快捷键（加粗 / 高亮）：在 keymap 之前，免得被别的分支吃掉
+  const marker = event.isComposing ? null : formatKeyOf(event);
+  if (marker !== null) {
+    event.preventDefault();
+    applyFormat((text, start, end) => toggleMarker(text, start, end, marker));
+    return;
+  }
+  // Esc 收起排版工具条（不阻断后续：Esc 还要退多选 / 清搜索）
+  if (event.key === 'Escape') formatBar.hide();
   // 斜杠菜单激活时优先吃掉导航键（↑↓/Enter/Tab/Esc），keymap 不再处理
   if (event.key !== 'Process' && !event.isComposing && slashMenu.handleKeydown(event)) return;
   // 多选：Shift+↑↓ 进入/扩选；选中态下 Tab/Alt+↑↓/Cmd+Enter/Backspace 批量生效
@@ -693,6 +714,125 @@ root.addEventListener(
   true,
 );
 
+// ---------- 行内排版（选区工具条 + 快捷键） ----------
+
+const formatBar = new FormatBar({
+  onMarker: (marker) => applyFormat((text, start, end) => toggleMarker(text, start, end, marker)),
+  onLink: () => applyFormat((text, start, end) => toggleLink(text, start, end)),
+});
+
+/**
+ * 对当前聚焦正文的选区施加排版。走 store.setNodeText（同打字的热路径：DOM 领先、
+ * 不 emit），所以这里要自己把新文本写回 DOM 并重设选区。
+ */
+function applyFormat(
+  transform: (text: string, start: number, end: number) => { text: string; start: number; end: number },
+  requireSelection = false,
+): boolean {
+  const el = activeEditable();
+  if (!el || el.dataset.field !== 'text') return false;
+  const id = el.closest<HTMLElement>('.node')?.dataset.id;
+  const range = selectionRange(el);
+  if (!id || !range) return false;
+  if (requireSelection && range.start === range.end) return false;
+
+  const next = transform(el.textContent ?? '', range.start, range.end);
+  el.textContent = next.text;
+  store.setNodeText(originalIdOf(id), next.text);
+  sidebar.syncText(originalIdOf(id), next.text);
+  selectRange(el, next.start, next.end);
+  syncFormatBar();
+  return true;
+}
+
+/** 有选区就把工具条贴到选区上方，否则收起。 */
+function syncFormatBar(): void {
+  const el = activeEditable();
+  if (!el || el.dataset.field !== 'text') return formatBar.hide();
+  const range = selectionRange(el);
+  if (!range || range.start === range.end) return formatBar.hide();
+  const rect = window.getSelection()?.getRangeAt(0).getBoundingClientRect();
+  if (!rect || (rect.width === 0 && rect.height === 0)) return formatBar.hide();
+  formatBar.showAt(rect);
+}
+
+document.addEventListener('selectionchange', syncFormatBar);
+window.addEventListener('scroll', () => formatBar.hide(), true);
+
+/**
+ * 排版快捷键。**只能挑 VS Code 没占的组合**：webview 的按键会转发给工作台做绑定解析，
+ * preventDefault 拦不住（`Cmd+B` = 切换侧边栏）。故分平台，与隐藏已完成同一套路数：
+ * mac 用 Ctrl+B / Ctrl+H，其余平台那两个被「侧边栏 / 全局替换」占着，改用 Ctrl+Alt+…。
+ */
+function formatKeyOf(e: KeyboardEvent): Marker | null {
+  if (e.metaKey || e.shiftKey) return null;
+  const combo = isMac() ? e.ctrlKey && !e.altKey : e.ctrlKey && e.altKey;
+  if (!combo) return null;
+  if (e.code === 'KeyB') return '**';
+  if (e.code === 'KeyH') return '==';
+  return null;
+}
+
+// 行内 Markdown 的显示态 / 源码态切换（见 inline.ts）。两件事都必须发生在浏览器
+// 定位光标**之前**，所以挂 pointerdown 捕获阶段，不能等 focusin：
+//   1) 点链接 → 交给 host 打开，不进编辑（按住 Alt/Cmd 则照常进去改字）；
+//   2) 点正文 → 先还原源码态，让浏览器按源文本做命中测试，光标落点才对得上。
+root.addEventListener(
+  'pointerdown',
+  (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const link = target.closest<HTMLElement>('.md-link');
+    if (link && !event.altKey && !event.metaKey && !event.ctrlKey && event.button === 0) {
+      event.preventDefault(); // 不聚焦、不移光标
+      const url = link.dataset.url;
+      if (url) send({ type: 'openLink', url });
+      return;
+    }
+    const editable = target.closest<HTMLElement>('[data-field="text"]');
+    if (!editable || !isRendered(editable)) return;
+    // 换态会销毁被点的元素，浏览器自己的定位会断在半路 → 这里全程接管：
+    // 先按落点算显示态偏移、换算回源码坐标，再换态、自己放光标。
+    const src = editable.dataset.src ?? '';
+    const rendered = offsetFromPoint(editable, event.clientX, event.clientY);
+    toSourceMode(editable);
+    event.preventDefault();
+    focusAtOffset(editable, rendered === null ? src.length : sourceOffset(src, rendered));
+  },
+  true,
+);
+
+// 兜底：任何方式拿到焦点（程序化 focus()、Tab 键、辅助技术）都必须是源码态。
+// pointerdown 那条只覆盖鼠标；漏了这条，用键盘走进来就会在「记号被隐藏」的文本上打字，
+// 光标偏移与源文本对不上，setText 直接写错位置。
+root.addEventListener(
+  'focusin',
+  (event) => {
+    const el = event.target;
+    if (el instanceof HTMLElement && el.dataset.field === 'text' && isRendered(el)) toSourceMode(el);
+  },
+  true,
+);
+
+// 失焦后回到显示态。渲染只在这里和 patch 里发生，打字过程中绝不重排 DOM。
+root.addEventListener(
+  'focusout',
+  (event) => {
+    const el = event.target;
+    if (!(el instanceof HTMLElement) || el.dataset.field !== 'text') return;
+    const id = el.closest<HTMLElement>('.node')?.dataset.id;
+    if (!id) return;
+    // 推到 macrotask：此刻焦点转移还没完成，立刻改 DOM 会打断它（同 scheduleChrome）
+    setTimeout(() => {
+      if (document.activeElement === el) return;
+      const node = store.findNode(originalIdOf(id));
+      if (!node || node.mirror !== null) return;
+      if (hasInlineMarkup(node.text)) renderInline(el, node.text);
+    }, 0);
+  },
+  true,
+);
+
 // 代码块的语言徽标即选择器：围栏行被渲染层摘掉了，不给入口就永远改不了语言（实机反馈）。
 root.addEventListener('click', (event) => {
   const btn = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-action="pick-lang"]');
@@ -889,6 +1029,7 @@ installClipboard(root, {
   selection,
   setNextCaret,
   saveImage: (name, dataBase64) => send({ type: 'saveImage', name, dataBase64 }),
+  linkSelection: (url) => applyFormat((text, start, end) => toggleLink(text, start, end, url), true),
 });
 
 installImeGuard(root, {

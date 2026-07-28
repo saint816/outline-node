@@ -5,5 +5,6 @@
   "OutlineNode: No unused images to clean up.": "OutlineNode: 没有需要清理的图片。",
   "OutlineNode: {0} unused image(s) in {1}. Move them to the trash?": "OutlineNode: {1} 里有 {0} 张图片已不再被引用，移到废纸篓？",
   "OutlineNode: Moved {0} unused image(s) to the trash.": "OutlineNode: 已把 {0} 张未引用的图片移到废纸篓。",
-  "Move to Trash": "移到废纸篓"
+  "Move to Trash": "移到废纸篓",
+  "OutlineNode: Unsupported link.": "OutlineNode: 不支持的链接。"
 }

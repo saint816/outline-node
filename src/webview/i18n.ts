@@ -64,6 +64,12 @@ export type MessageKey =
   | 'code.plain'
   | 'code.pickLang'
   | 'help.codeIndent'
+  | 'format.ariaLabel'
+  | 'format.bold'
+  | 'format.highlight'
+  | 'format.code'
+  | 'format.link'
+  | 'help.format'
   | 'help.multiSelect'
   | 'help.multiSelectClick'
   | 'slash.ariaLabel'
@@ -124,6 +130,12 @@ const EN: Record<MessageKey, string> = {
   'code.plain': 'text',
   'code.pickLang': 'Change language',
   'help.codeIndent': 'Indent / outdent this node',
+  'format.ariaLabel': 'Text formatting',
+  'format.bold': 'Bold',
+  'format.highlight': 'Highlight',
+  'format.code': 'Inline code',
+  'format.link': 'Link',
+  'help.format': 'Bold / highlight the selection',
   'help.multiSelect': 'Select multiple nodes (Tab / Alt+↑↓ / Cmd+Enter / Backspace apply to all)',
   'help.multiSelectClick': 'Extend the selection to the clicked node',
   'slash.ariaLabel': 'Insert menu',
@@ -185,6 +197,12 @@ const ZH: Record<MessageKey, string> = {
   'code.plain': '纯文本',
   'code.pickLang': '切换语言',
   'help.codeIndent': '缩进 / 反缩进该节点',
+  'format.ariaLabel': '文字排版',
+  'format.bold': '加粗',
+  'format.highlight': '高亮',
+  'format.code': '行内代码',
+  'format.link': '链接',
+  'help.format': '加粗 / 高亮选中的文字',
   'help.multiSelect': '多选节点（Tab / Alt+↑↓ / Cmd+Enter / Backspace 批量生效）',
   'help.multiSelectClick': '把选区扩到点击的节点',
   'slash.ariaLabel': '插入菜单',

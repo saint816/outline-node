@@ -334,6 +334,87 @@ body {
   background: none;
 }
 
+/* ---------- 选区排版工具条（formatBar.ts） ---------- */
+
+.format-bar {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, transparent);
+}
+
+.format-bar[hidden] {
+  display: none;
+}
+
+.format-btn {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--vscode-foreground, var(--vscode-editor-foreground));
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.format-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.format-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+.format-bold {
+  font-weight: 700;
+}
+
+.format-code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.8em;
+}
+
+/* ---------- 行内 Markdown（inline.ts：未聚焦=显示态，聚焦=源码态） ---------- */
+
+.md-code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.92em;
+}
+
+.md-bold {
+  font-weight: 700;
+}
+
+/* 高亮（==text==）：用编辑器的查找命中色，明暗主题都保证对比度 */
+.md-mark {
+  padding: 0 2px;
+  border-radius: 2px;
+  background: var(--vscode-editor-findMatchHighlightBackground, var(--vscode-badge-background));
+  color: inherit;
+}
+
+.md-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.md-link:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+}
+
 /* ---------- 图片 ---------- */
 
 /* 节点正文里的图片预览（源码仍在正文里可编辑） */

@@ -32,7 +32,8 @@ export type W2H =
   | { type: 'saveFolding'; foldedKeys: string[] }                // 折叠变化时节流上报（见 06）
   | { type: 'saveBookmarks'; bookmarkKeys: string[] }            // 星标变化时节流上报（nodeKey；UI-state，仿 saveFolding）
   | { type: 'saveImage'; name: string; dataBase64: string }     // 粘贴/拖入图片：name 是**相对文档目录的路径**（`<文件名>/assets/pasted-…`）
-  | { type: 'copyText'; text: string };                         // 代码块复制按钮 → host `vscode.env.clipboard.writeText`（单向，无回执）
+  | { type: 'copyText'; text: string }                          // 代码块复制按钮 → host `vscode.env.clipboard.writeText`（单向，无回执）
+  | { type: 'openLink'; url: string };                          // 点正文里的链接 → host `vscode.env.openExternal`（**只放行 http/https/mailto**）
 
 // ---------- host → webview ----------
 export type H2W =
@@ -61,6 +62,12 @@ export interface EditorConfig {
 4. **删除不与删节点耦合**：删节点只是文本编辑（可 undo），删文件不可 undo。孤儿图片走**保存后自动清理**（默认开，只动 `pasted-*`，移废纸篓）+ **显式命令** `outlineNode.cleanupImages`（全量 + 确认），见 `extension/imageCleanup.ts`。
 
 图片能被 webview 加载依赖 `localResourceRoots` 含文档目录 + CSP `img-src`（见 05 / provider）。
+
+### 打开链接（openLink）
+
+单向、无回执。webview 里不能自己导航，所以正文里的链接一律发给 host 走 `vscode.env.openExternal`。
+
+**url 是不可信输入**（来自用户文档里的文本），host 侧 `safeExternalUri` 只放行 `http` / `https` / `mailto`，其余 scheme（`vscode:`、`file:`、`javascript:`…）一律拒绝并提示——它们能被用来触发本地操作。解析失败同样拒绝。
 
 ### 复制到剪贴板（copyText）
 

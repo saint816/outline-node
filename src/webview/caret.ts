@@ -1,6 +1,11 @@
 // 光标 save / restore（规格见 docs/05）。
+//
+// 行内渲染（inline.ts）让未聚焦的正文可能带 <strong>/<code> 等子元素、且隐藏了记号，
+// 此时 textContent 与源文本长度不同。**放光标之前一律先回源码态**：偏移语义只对源文本成立。
 // contenteditable="plaintext-only" 下每个可编辑 div 内只有单个 text node（或空），
 // offset 即字符偏移，没有富文本 Range 的复杂度。
+
+import { toSourceMode } from './inline.js';
 
 export interface CaretPos {
   nodeId: string;
@@ -29,6 +34,7 @@ export function saveCaret(): CaretPos | null {
 export function restoreCaret(pos: CaretPos): boolean {
   const editable = findEditable(pos.nodeId, pos.field);
   if (!editable) return false;
+  toSourceMode(editable); // 显示态下偏移对不上源文本，先还原（见文件头）
   const ok = placeCaretAtOffset(editable, pos.offset);
   if (ok && document.activeElement !== editable) editable.focus({ preventScroll: true });
   return ok;
@@ -41,6 +47,53 @@ export function focusNode(nodeId: string, field: 'text' | 'note' = 'text', offse
 export function findEditable(nodeId: string, field: 'text' | 'note'): HTMLElement | null {
   const nodeEl = document.querySelector<HTMLElement>(`.node[data-id="${cssEscape(nodeId)}"]`);
   return nodeEl?.querySelector<HTMLElement>(`:scope > .node-row > [data-field="${field}"], :scope > [data-field="${field}"]`) ?? null;
+}
+
+/**
+ * 屏幕坐标 → 该可编辑元素内的字符偏移（点击落点换算）。命中不到返回 null。
+ * 行内渲染切源码态时用它接管浏览器的命中测试：换态会销毁被点的元素，
+ * 浏览器自己的定位会断在半路（实测点链接旁边根本聚焦不上）。
+ */
+export function offsetFromPoint(editable: HTMLElement, x: number, y: number): number | null {
+  const doc = document as Document & {
+    caretRangeFromPoint?(x: number, y: number): Range | null;
+  };
+  const range = doc.caretRangeFromPoint?.(x, y) ?? null;
+  if (!range || !editable.contains(range.startContainer)) return null;
+  return offsetWithin(editable, range.startContainer, range.startOffset);
+}
+
+/** 把焦点与光标放到该元素的第 offset 个字符处（元素已在源码态）。 */
+export function focusAtOffset(editable: HTMLElement, offset: number): void {
+  placeCaretAtOffset(editable, offset);
+  if (document.activeElement !== editable) editable.focus({ preventScroll: true });
+}
+
+/** 当前选区在该可编辑元素内的字符范围（不在其中 / 无选区时 null）。 */
+export function selectionRange(editable: HTMLElement): { start: number; end: number } | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.anchorNode === null) return null;
+  if (!editable.contains(selection.anchorNode) || !editable.contains(selection.focusNode)) return null;
+  const a = offsetWithin(editable, selection.anchorNode, selection.anchorOffset);
+  const b = offsetWithin(editable, selection.focusNode!, selection.focusOffset);
+  return a <= b ? { start: a, end: b } : { start: b, end: a };
+}
+
+/** 选中该可编辑元素的 [start, end)（start === end 即放光标）。 */
+export function selectRange(editable: HTMLElement, start: number, end: number): void {
+  if (start === end) return focusAtOffset(editable, start);
+  const selection = window.getSelection();
+  if (!selection) return;
+  placeCaretAtOffset(editable, start);
+  const from = selection.getRangeAt(0).cloneRange();
+  placeCaretAtOffset(editable, end);
+  const to = selection.getRangeAt(0);
+  const range = document.createRange();
+  range.setStart(from.startContainer, from.startOffset);
+  range.setEnd(to.startContainer, to.startOffset);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  if (document.activeElement !== editable) editable.focus({ preventScroll: true });
 }
 
 /** 当前光标所在的可编辑元素（不在任何可编辑区时返回 null）。 */

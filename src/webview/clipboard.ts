@@ -6,6 +6,7 @@ import { parseOutline } from '../core/parser.js';
 import { serializeOutline } from '../core/serializer.js';
 import type { CaretPos } from './caret.js';
 import { saveCaret } from './caret.js';
+import { looksLikeUrl } from './format.js';
 import type { NodeSelection } from './selection.js';
 import type { Store } from './store.js';
 
@@ -16,6 +17,8 @@ export interface ClipboardContext {
   setNextCaret(pos: CaretPos): void;
   /** 把图片字节交给 host 写到文档同目录的 name 文件（见 docs/04 saveImage）。 */
   saveImage(name: string, dataBase64: string): void;
+  /** 把当前正文选区包成 [选中的字](url)；没有选区就返回 false，让粘贴照常走。 */
+  linkSelection(url: string): boolean;
 }
 
 export function installClipboard(root: HTMLElement, ctx: ClipboardContext): void {
@@ -37,6 +40,13 @@ function onPaste(event: ClipboardEvent, ctx: ClipboardContext): void {
   }
 
   const text = event.clipboardData?.getData('text/plain') ?? '';
+
+  // 选中文字时粘贴一条 URL → 直接变成 [选中的字](url)（Workflowy / Notion 同款）。
+  // linkSelection 自己判断有没有选区：没选区返回 false，粘贴照常走浏览器默认插入。
+  if (caret.field === 'text' && looksLikeUrl(text) && ctx.linkSelection(text.trim())) {
+    event.preventDefault();
+    return;
+  }
 
   // SPEC-GAP: docs/05 说 paste 一律 preventDefault 后自己插入。单行文本没必要——
   // contenteditable="plaintext-only" 本身就杜绝了富文本，交给浏览器插入反而不会碰光标。

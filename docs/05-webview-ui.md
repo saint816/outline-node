@@ -81,7 +81,7 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 | `Backspace`（offset 0） | 有前驱 → `mergeWithPrevious`（dispatch 前记录 junction offset 恢复光标）；无前驱（首节点）且为空节点 → `delete` 该节点、光标移到下一个可见节点（Workflowy 语义）；无前驱且非空 → no-op（不丢正文）；文档仅剩一个节点时不删 |
 | `Alt+↑` / `Alt+↓` | `moveUp` / `moveDown` |
 | `Cmd/Ctrl+Enter` | `toggleChecked` |
-| ` ``` ` / ` ```lang ` + `Enter` | 空的顶层根节点 → 文档级代码块（`toCodeBlock`，见 02/04）；**其余节点 → 代码块挂到该节点下**（`setText('')` + `setNote(围栏)`，一次 `dispatchAll`） |
+| ` ``` ` / ` ```lang ` + `Enter` | **代码块一律挂到该节点下**（`setText('')` + `setNote(围栏)`，一次 `dispatchAll`）。0.9.0 起顶层空节点不再走 `toCodeBlock`——文档级块没有 bullet，拖不动也缩不进去（见 02） |
 | `/`（词首） | 打开斜杠插入菜单（见下「斜杠插入菜单」）：Code / To-do / 编号 |
 | `Alt+→` / `Alt+←` | zoom in 当前节点 / zoom out 一级 |
 | `Cmd/Ctrl+.` | 折叠/展开当前节点 |
@@ -153,6 +153,27 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
   - **图片** → 生成唯一文件名，经 store 在光标处插入 `![[<assetsDir>/name]]`（**不用 `execCommand`**：它在 VS Code webview 里对 `plaintext-only` 静默失败，图写了盘正文没引用，真机复现过），并发 `saveImage{name, dataBase64}` 让 host 写盘（见 04）。落盘目录是 host 注入的 `data-assets-dir` = `<文件名去扩展名>/assets`，不再撒在笔记同级目录；
   - 否则取 `clipboardData.getData('text/plain')`：多行且含列表语法 → 复用 **core parser** 解析出子树发 `insertSubtree`；多行无列表语法 → 按行拆为兄弟节点发 `insertSubtree`；单行 → 插入 caret 处走 `setText`。
 - **copy/cut**：**多选优先**——选区非空时把选中的全部子树序列化成一份 markdown 列表（cut 再整段 `delete`）；否则退回单节点：选中文本走浏览器默认，光标所在节点则序列化整棵子树（复用 core serializer），与外界互粘闭环；cut 追加 `delete` op。
+
+## 行内 Markdown（inline.ts）
+
+`` `代码` ``、`**加粗**`、`==高亮==`、`[文字](url)` / `<url>` / 裸链接。**数据层永远只存原始 Markdown**，这里纯渲染。
+
+- **两态**：未聚焦 → 显示态（记号隐藏、只留效果）；聚焦 → 源码态（还原成单个纯文本节点）。
+  为什么必须回源码态：在「记号被隐藏」的文本上打字，光标偏移与源文本偏移对不上，`setText` 会写错位置。Obsidian 实况编辑同理。副作用是点进去会看到记号，这是刻意的。
+- **换态时机**：`pointerdown`（捕获）、`focusin`（兜底：程序化 `focus()` / Tab / 辅助技术）、`caret.restoreCaret`（放光标前）。失焦后在 macrotask 里渲染回显示态。
+- **点击落点要自己接管**：换态会销毁被点的那个元素，浏览器的命中测试会断在半路（实测点完根本聚焦不上）。所以 `pointerdown` 里先 `offsetFromPoint` 取显示态偏移 → `sourceOffset()` 换算成源码偏移 → 换态 → `preventDefault` → `focusAtOffset`。两套坐标不等长，不换算的话越靠后错得越多。
+- **判等走 `dataset.src` 而不是 `textContent`**：显示态下 textContent ≠ 源文本，拿它比对会「每帧都不相等 → 每帧重建」，直接吃掉 refresh 的 50ms 红线余量（见 07）。`hasInlineMarkup` 先做一次便宜的字符预判，无记号的节点完全走原来的纯文本快路径。
+- **链接用 `<span role="link">` 而不是 `<a href>`**：webview 里本来就不能靠 href 导航（打开走 host 的 `openLink`，见 04），留着 href 只会招来浏览器默认行为——Alt+点击被当成「下载链接」，「按修饰键进去改字」这条路直接失效。
+- **不碰的**：镜像行（`![[#^id]]`，归 06）与 wiki 链接 `[[…]]`（归图片/镜像层）。
+- **渲染用 DOM API 建元素，不用 innerHTML**：文本天然转义。
+
+## 选区排版（format.ts + formatBar.ts）
+
+- **纯逻辑在 `format.ts`**（`toggleMarker` / `toggleLink`），不碰 DOM，靠单测覆盖；语义是「再按一次取消」——选区两侧紧邻标记、或选区自身就是 `**…**`，都识别为取消。
+- **工具条是主入口**：选中文字浮出 B / 高亮 / 代码 / 链接。按钮的 `mousedown` 必须 `preventDefault`，否则按下的瞬间选区就没了。
+- **快捷键只能挑 VS Code 没占的组合**（`formatKeyOf`）：mac `Ctrl+B` / `Ctrl+H`，其他平台 `Ctrl+Alt+B` / `Ctrl+Alt+H`。理由同 `Ctrl+O`：webview 按键会转发给工作台，`preventDefault` 拦不住原生绑定。
+- **选中文字时粘贴 URL → 直接包成 `[选中的字](url)`**（Workflowy / Notion 同款）。判据 `looksLikeUrl` 刻意**从严**：单个 token，且带 `http(s)`/`mailto` 协议或 `www.` 前缀——宁可漏判走普通粘贴，也不能把普通文字误当链接吞掉选中内容。选区折叠时 `applyFormat(requireSelection)` 返回 false，粘贴照常走浏览器默认插入。选中的整段本身已是链接时，给了新 url 就**换地址**（不是还原成纯文字，那是工具条 `url === ''` 的语义）。
+- **施加走 `store.setNodeText`（打字热路径，不 emit）**：所以要自己把新文本写回 DOM、`sidebar.syncText` 跟上、再用 `selectRange` 重设选区——选中的仍是内容而非标记，可以连点两次叠加 `**==x==**`。
 
 ## 图片（images.ts + lightbox.ts）
 

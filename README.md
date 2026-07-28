@@ -17,6 +17,11 @@ Your notes are just a standard `.md` indented list — Obsidian and Logseq read 
 - **Node notes** — `Shift+Enter` opens a second line, stored as an indented continuation
 - **Move and drag** — `Alt+↑/↓` moves a whole subtree; drag with the mouse to reorder across levels
 - **Live search filter** — keeps the ancestor chain, sees through folded nodes
+- **Inline Markdown** — `` `code` ``, `**bold**`, `==highlight==` and links render as you read; click in and you get the raw Markdown back. Paste a URL over selected text to turn it into a link
+- **Code blocks** — syntax highlighting for 12 languages, switchable per block, with a copy button
+- **Images** — `![[pic.png]]` and `![](path)` render inline; paste a screenshot and it lands in the note's `assets/` folder
+- **Sidebar** — top-level navigation and starred nodes, collapsible
+- **Multi-select** — shift-click or `Shift+↑/↓` to act on several nodes at once
 - **Mirror references** — the same node in several places, edited in sync, using Obsidian's native `^id` / `![[#^id]]` block-embed syntax
 - **Full IME support** for Chinese, Japanese and Korean input
 - **Undo / redo** delegated to VS Code's native undo stack — no second history to fight with
@@ -36,9 +41,15 @@ Your notes are just a standard `.md` indented list — Obsidian and Logseq read 
 | `↑` / `↓` | Move to the adjacent node when on the first / last line |
 | `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` | Undo / redo (VS Code native) |
 | `Cmd/Ctrl+F` | Focus the outline search box |
+| `Shift+↑` / `Shift+↓` | Extend the node selection |
+| `Ctrl+B` / `Ctrl+H` | Bold / highlight the selected text (`Ctrl+Alt+B` / `Ctrl+Alt+H` off macOS) |
+| `Ctrl+O` | Hide / show completed nodes (`Ctrl+Alt+O` off macOS) |
+| `?` | Show all shortcuts |
 | `Esc` | Clear the search / cancel a drag |
 
 Use `Cmd` on macOS, `Ctrl` on Windows and Linux.
+
+The formatting and hide-completed keys deliberately avoid `Cmd+B` / `Cmd+O`: webview keystrokes are handed to the workbench for keybinding resolution, so VS Code's own bindings (toggle sidebar, open file) win no matter what the webview does. The floating toolbar that appears over selected text is the primary entry point for formatting.
 
 ## Usage
 

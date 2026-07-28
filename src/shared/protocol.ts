@@ -61,7 +61,9 @@ export type W2H =
   /** 粘贴/拖入图片：host 把 base64 字节写到文档同目录的 name 文件（见 docs/04）。 */
   | { type: 'saveImage'; name: string; dataBase64: string }
   /** 代码块的复制按钮：走宿主的 vscode.env.clipboard，不依赖 webview 里的浏览器剪贴板 API。 */
-  | { type: 'copyText'; text: string };
+  | { type: 'copyText'; text: string }
+  /** 点击正文里的链接：webview 不能自己导航，交给 host 的 vscode.env.openExternal。 */
+  | { type: 'openLink'; url: string };
 
 // ---------- host → webview ----------
 
@@ -115,6 +117,8 @@ export function asW2H(raw: unknown): W2H | null {
         : null;
     case 'copyText':
       return typeof raw.text === 'string' ? { type: 'copyText', text: raw.text } : null;
+    case 'openLink':
+      return typeof raw.url === 'string' ? { type: 'openLink', url: raw.url } : null;
     default:
       return null;
   }

@@ -6,6 +6,9 @@ import { isMac } from './platform.js';
 /** 隐藏已完成的键位随平台变（见 main.ts isHideCompletedKey 的注释）；打开浮层时才求值。 */
 const hideCompletedKeys = (): string => (isMac() ? 'Ctrl+O' : 'Ctrl+Alt+O');
 
+/** 排版键位同理（见 main.ts formatKeyOf）：mac 上 Cmd+B 被「切换侧边栏」占着，抢不过来。 */
+const formatKeys = (): string => (isMac() ? 'Ctrl+B / Ctrl+H' : 'Ctrl+Alt+B / Ctrl+Alt+H');
+
 const SHORTCUTS: { keys: string | (() => string); labelKey: MessageKey }[] = [
   { keys: 'Enter', labelKey: 'help.split' },
   { keys: 'Shift+Enter', labelKey: 'help.note' },
@@ -27,6 +30,7 @@ const SHORTCUTS: { keys: string | (() => string); labelKey: MessageKey }[] = [
   { keys: 'Backspace（空代码块）', labelKey: 'help.codeDelete' },
   { keys: 'Esc / ↑↓（代码块内）', labelKey: 'help.codeEscape' },
   { keys: 'Tab / Shift+Tab（代码块内）', labelKey: 'help.codeIndent' },
+  { keys: formatKeys, labelKey: 'help.format' },
   { keys: '?', labelKey: 'help.help' },
 ];
 

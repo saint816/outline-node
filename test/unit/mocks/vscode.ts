@@ -20,6 +20,10 @@ export class Uri {
   static parse(value: string): Uri {
     return new Uri(value);
   }
+  /** 真 vscode.Uri 有 scheme（openLink 的白名单靠它判定）。 */
+  get scheme(): string {
+    return /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(this.value)?.[1] ?? '';
+  }
   /** 真 vscode.Uri 有 path（scheme/authority 之后的部分）。 */
   get path(): string {
     const withoutScheme = this.value.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '');
@@ -126,6 +130,8 @@ export const registry = {
   errors: [] as string[],
   /** env.clipboard.writeText 的记录（代码块复制按钮）。 */
   clipboard: [] as string[],
+  /** env.openExternal 的记录（正文里的链接）。 */
+  opened: [] as string[],
   reset(): void {
     this.customEditors = [];
     this.commands.clear();
@@ -141,6 +147,7 @@ export const registry = {
     this.deletes = [];
     this.dirs.clear();
     this.clipboard = [];
+    this.opened = [];
     window.activeTextEditor = undefined;
     window.tabGroups.activeTabGroup.activeTab = undefined;
   },
@@ -204,6 +211,10 @@ export const FileType = { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 } 
 
 export const env = {
   language: 'en',
+  async openExternal(uri: { toString(): string }): Promise<boolean> {
+    registry.opened.push(uri.toString());
+    return true;
+  },
   clipboard: {
     async writeText(text: string): Promise<void> {
       registry.clipboard.push(text);

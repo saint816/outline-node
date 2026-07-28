@@ -5,6 +5,7 @@ import type { OutlineNode } from '../core/model.js';
 import { parseFence, renderFence, type CodeFence } from './codeFence.js';
 import { t } from './i18n.js';
 import { isImageOnly, parseImages, wholeLineImage, type ParsedImage } from './images.js';
+import { hasInlineMarkup, isRendered, renderInline, toSourceMode } from './inline.js';
 import type { MirrorState } from './mirror.js';
 
 export interface UpdateOptions {
@@ -85,9 +86,7 @@ export class NodeView {
     this.toggleEl.setAttribute('aria-label', opts.folded ? t('toggle.expand') : t('toggle.collapse'));
     this.el.classList.toggle('folded', opts.folded);
 
-    if (!opts.skipText && this.textEl.textContent !== node.text) {
-      this.textEl.textContent = node.text;
-    }
+    if (!opts.skipText) this.syncText(node);
 
     this.syncMirrorState(opts);
 
@@ -146,6 +145,24 @@ export class NodeView {
    * 镜像状态：展开出来的镜像行可编辑（编辑落到原节点）；断链与循环引用是只读占位，
    * 保留原文 `![[#^id]]`，绝不静默删除、不丢数据（见 docs/06）。
    */
+  /**
+   * 正文文本。未聚焦且含行内记号 → 显示态（见 inline.ts）；否则纯文本快路径。
+   * 显示态下 textContent ≠ 源文本（记号被隐藏），所以判等必须走 dataset.src，
+   * 否则每次 patch 都会「不相等 → 重建」，直接吃掉 refresh 的 50ms 红线余量（见 07）。
+   */
+  private syncText(node: OutlineNode): void {
+    const focused = document.activeElement === this.textEl;
+    // 镜像行的正文是 ![[#^id]]，归镜像层处理，不做行内渲染
+    const wantRendered = !focused && node.mirror === null && hasInlineMarkup(node.text);
+
+    if (wantRendered) {
+      if (this.textEl.dataset.src !== node.text) renderInline(this.textEl, node.text);
+      return;
+    }
+    if (isRendered(this.textEl)) toSourceMode(this.textEl);
+    if (this.textEl.textContent !== node.text) this.textEl.textContent = node.text;
+  }
+
   private syncMirrorState(opts: UpdateOptions): void {
     const state = opts.mirrorState ?? 'none';
     this.el.classList.toggle('mirror-view', state === 'mirror');
