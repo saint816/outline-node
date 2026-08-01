@@ -40,6 +40,12 @@ export class DocumentSession {
   private foldedKeys: string[] | null = null;
   private bookmarkKeys: string[] | null = null;
   private disposed = false;
+  /**
+   * Webview 消息必须严格按到达顺序处理。provider 的消息监听不能 await，若 edit 的
+   * workspace.applyEdit 尚未进入 VS Code undo 栈时 requestUndo 抢先执行，会错误撤销
+   * 前一条外部文件变更。tail 只负责排队；单条失败不能毒死后续消息。
+   */
+  private messageTail: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly host: SessionHost,
@@ -55,7 +61,13 @@ export class DocumentSession {
     return toSnapshot(this.mirrorDoc);
   }
 
-  async handleMessage(msg: W2H): Promise<void> {
+  handleMessage(msg: W2H): Promise<void> {
+    const result = this.messageTail.then(() => this.processMessage(msg));
+    this.messageTail = result.catch(() => undefined);
+    return result;
+  }
+
+  private async processMessage(msg: W2H): Promise<void> {
     if (this.disposed) return;
     switch (msg.type) {
       case 'ready':

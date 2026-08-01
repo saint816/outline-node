@@ -8,7 +8,7 @@ import { cssEscape, resolvePlacement } from './dnd.js';
 import { t } from './i18n.js';
 
 export interface SidebarCallbacks {
-  onNavigate(id: string | null): void;
+  onNavigate(id: string | null, section: SidebarNavSection): void;
   onToggleStar(id: string): void;
   onToggleCollapse(): void;
   /** 拖拽落定：把 id 移到 parentId 下的 index 处（index 按「摘除前」坐标，见 core/ops move）。 */
@@ -21,9 +21,13 @@ export interface SidebarModel {
   topLevel: readonly OutlineNode[];
   starred: readonly OutlineNode[];
   currentZoomId: string | null;
+  /** 同一节点可同时出现在 Starred 与 Home 树中，只高亮实际进入它的那一份。 */
+  currentSection: SidebarNavSection;
   isStarred(id: string): boolean;
   collapsed: boolean;
 }
+
+export type SidebarNavSection = 'starred' | 'outline';
 
 /** 大纲树里一行的位置信息（拖拽落点计算用）。结构上兼容 dnd 的 PlacementRow。 */
 interface SidebarRow {
@@ -249,15 +253,18 @@ export class SidebarView {
     label.type = 'button';
     label.className = 'sidebar-label';
     label.textContent = t('breadcrumb.home');
-    label.addEventListener('click', () => this.cb.onNavigate(null));
+    label.addEventListener('click', () => this.cb.onNavigate(null, 'outline'));
     row.append(label);
     return row;
   }
 
   private item(node: OutlineNode, depth: number, tree: boolean): HTMLElement {
     const model = this.model!;
+    const section: SidebarNavSection = tree ? 'outline' : 'starred';
     const row = document.createElement('div');
-    row.className = 'sidebar-item' + (node.id === model.currentZoomId ? ' active' : '');
+    const active = node.id === model.currentZoomId && section === model.currentSection;
+    row.className = 'sidebar-item' + (active ? ' active' : '');
+    row.dataset.navSection = section;
     row.style.setProperty('--depth', String(depth));
     // 只有大纲树行可拖拽（Home / 星标不参与结构移动）
     if (tree) {
@@ -289,7 +296,7 @@ export class SidebarView {
     const text = node.text.trim() === '' ? t('node.empty') : node.text;
     label.textContent = text;
     label.title = text;
-    label.addEventListener('click', () => this.cb.onNavigate(node.id));
+    label.addEventListener('click', () => this.cb.onNavigate(node.id, section));
     row.append(label);
     // 登记 label，供 syncText 打字热更新（同一 id 在 Starred + OUTLINE 各有一个）
     const bucket = this.labels.get(node.id);

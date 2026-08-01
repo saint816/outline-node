@@ -24,7 +24,7 @@ import { Renderer } from './renderer.js';
 import { SearchBox, applyFilters } from './search.js';
 import { Store } from './store.js';
 import { Breadcrumb } from './zoom.js';
-import { SidebarView } from './sidebar.js';
+import { SidebarView, type SidebarNavSection } from './sidebar.js';
 import { Toolbar } from './toolbar.js';
 import { HelpOverlay } from './help.js';
 import { closeLightbox, handleImageClick, isLightboxOpen, onLightboxClosed } from './lightbox.js';
@@ -63,8 +63,14 @@ const selection = new NodeSelection(store, root);
 
 // zoom 前进/后退历史：所有「记录型」导航都走 navigate()，back/forward 只重放。
 const zoomHistory = new ZoomHistory((id) => store.zoomTo(id));
-function navigate(id: string | null): void {
+let sidebarNavSection: SidebarNavSection = 'outline';
+function navigate(id: string | null, section: SidebarNavSection = 'outline'): void {
+  const sectionChanged = sidebarNavSection !== section;
+  sidebarNavSection = section;
   zoomHistory.go(id);
+  // 在 Starred / Home 的同一节点副本间切换时 zoom id 不变，store 不会 emit；
+  // 仍需刷新侧栏，让 active 只跟随这次实际点击的入口。
+  if (sectionChanged && store.zoomRoot === id) scheduleChrome();
 }
 
 let sidebarCollapsed = false;
@@ -74,7 +80,7 @@ const breadcrumb = new Breadcrumb((id) => navigate(id));
 const search = new SearchBox((query) => store.setSearchQuery(query));
 const help = new HelpOverlay();
 const sidebar = new SidebarView({
-  onNavigate: (id) => navigate(id),
+  onNavigate: (id, section) => navigate(id, section),
   onToggleStar: (id) => store.toggleStar(id),
   onToggleCollapse: () => {
     sidebarCollapsed = !sidebarCollapsed;
@@ -89,8 +95,14 @@ const sidebar = new SidebarView({
 });
 const toolbar = new Toolbar(
   {
-    onBack: () => zoomHistory.back(),
-    onForward: () => zoomHistory.forward(),
+    onBack: () => {
+      sidebarNavSection = 'outline';
+      zoomHistory.back();
+    },
+    onForward: () => {
+      sidebarNavSection = 'outline';
+      zoomHistory.forward();
+    },
     onToggleHideCompleted: () => toggleHideCompletedWithFocus(),
     onHelp: () => help.toggle(),
   },
@@ -194,6 +206,7 @@ function updateChrome(): void {
     topLevel: store.topLevelNodes(),
     starred: starredNodes,
     currentZoomId: store.zoomRoot,
+    currentSection: sidebarNavSection,
     isStarred: (id) => starredIds.has(id),
     collapsed: sidebarCollapsed,
   });

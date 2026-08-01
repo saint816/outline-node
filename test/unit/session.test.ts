@@ -33,6 +33,7 @@ class MockHost implements SessionHost {
   undoCalls = 0;
   redoCalls = 0;
   onChange: (() => void) | null = null;
+  beforeApplyEdit: Promise<void> | null = null;
   private history: string[] = [];
 
   constructor(private text: string) {}
@@ -41,12 +42,13 @@ class MockHost implements SessionHost {
     return this.text;
   }
 
-  applyEdit(spans: TextEditSpan[]): Promise<boolean> {
+  async applyEdit(spans: TextEditSpan[]): Promise<boolean> {
     this.editCalls++;
-    if (!this.applyEditSucceeds) return Promise.resolve(false);
+    if (!this.applyEditSucceeds) return false;
+    await this.beforeApplyEdit;
     this.history.push(this.text);
     this.setText(applyEdits(this.text, spans));
-    return Promise.resolve(true);
+    return true;
   }
 
   postMessage(msg: H2W): void {
@@ -272,6 +274,41 @@ describe('外部修改', () => {
 });
 
 describe('undo / redo 转发', () => {
+  it('外部刷新后的 edit 与紧随其后的 requestUndo 串行，保留外部内容', async () => {
+    const { host, session } = setup('- [ ] task\n');
+    await session.handleMessage({ type: 'ready' });
+
+    host.external('- [ ] task\n- external keep\n');
+    await vi.advanceTimersByTimeAsync(100);
+    const refresh = host.posted.at(-1);
+    expect(refresh).toMatchObject({ type: 'refresh', cause: 'external' });
+    const id = nodesOf((refresh as Extract<H2W, { type: 'refresh' }>).snapshot)[0].id;
+
+    let releaseEdit!: () => void;
+    host.beforeApplyEdit = new Promise<void>((resolve) => {
+      releaseEdit = resolve;
+    });
+    const edit = session.handleMessage({
+      type: 'edit',
+      baseVersion: host.version,
+      seq: 1,
+      ops: [{ op: 'toggleChecked', id }],
+    });
+    await Promise.resolve();
+    const undo = session.handleMessage({ type: 'requestUndo' });
+
+    // applyEdit 尚未完成时，Undo 不能越过它去撤销更早的外部变更。
+    expect(host.undoCalls).toBe(0);
+    releaseEdit();
+    await edit;
+    await undo;
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(host.undoCalls).toBe(1);
+    expect(host.getText()).toBe('- [ ] task\n- external keep\n');
+    expect(host.posted.at(-1)).toMatchObject({ type: 'refresh', cause: 'undo' });
+  });
+
   it('requestUndo → executeUndo → 文档变化 → refresh{cause:"undo"}', async () => {
     const { host, session } = setup('- a\n');
     await session.handleMessage({ type: 'ready' });

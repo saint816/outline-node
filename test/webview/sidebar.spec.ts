@@ -49,6 +49,23 @@ test('侧栏列出顶层节点，点击即 zoom 进子树', async ({ page }) => 
   await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Beta']);
 });
 
+test('侧栏 zoom 进已折叠节点时仍显示其子节点，退出后保留原折叠态', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha', [node('a1', 'A1'), node('a2', 'A2')])]);
+
+  // 全文档视图中先折叠 Alpha；这是用户截图中「右侧只有标题」的触发条件。
+  await page.locator('.node[data-id="a"] > .node-row > .toggle').click();
+  await expect(page.locator('#outline-root .node[data-id="a1"]')).toHaveCount(0);
+
+  await page.locator('.sidebar-item[data-id="a"] .sidebar-label').click();
+  await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Alpha']);
+  await expect(page.locator('#outline-root .node[data-id="a1"]')).toBeVisible();
+  await expect(page.locator('#outline-root .node[data-id="a2"]')).toBeVisible();
+
+  // zoom 只覆盖渲染语义，不修改折叠 UI 状态；回 Home 后仍应是折叠的。
+  await page.locator('.sidebar-home .sidebar-label').click();
+  await expect(page.locator('#outline-root .node[data-id="a1"]')).toHaveCount(0);
+});
+
 test('侧栏拖拽：同层重排，发出单条 move op', async ({ page }) => {
   await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta'), node('c', 'Gamma')]);
   await clearPosted(page);
@@ -148,6 +165,24 @@ test('星标：进入 Starred 区、节流上报 saveBookmarks，reopen 后按 n
     config: CONFIG,
   });
   await expect(page.locator('.sidebar-section', { hasText: 'Starred' })).toBeVisible();
+});
+
+test('同一节点在 Starred 与 Home 树中只高亮实际点击的副本', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta')]);
+  await page.locator('.sidebar-item[data-id="a"] .sidebar-star').click();
+  await expect(page.locator('.sidebar-item[data-nav-section="starred"]')).toBeVisible();
+
+  const starred = page.locator('.sidebar-item[data-nav-section="starred"]');
+  const outline = page.locator('.sidebar-item[data-nav-section="outline"][data-id="a"]');
+
+  await outline.locator('.sidebar-label').click();
+  await expect(outline).toHaveClass(/active/);
+  await expect(starred).not.toHaveClass(/active/);
+
+  // zoom id 没变化，只切换导航入口；仍必须把 active 从 Home 移到 Starred。
+  await starred.locator('.sidebar-label').click();
+  await expect(starred).toHaveClass(/active/);
+  await expect(outline).not.toHaveClass(/active/);
 });
 
 // 分区标题即折叠开关；Home 就是大纲区的标题行（不再单列一行），三角折叠、文字回全文档。

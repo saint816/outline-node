@@ -49,7 +49,9 @@ export class Renderer {
     if (zoomRoot) {
       // zoom 状态下其余部分完全不在 DOM（见 docs/07）
       const container = this.ensureZoomContainer();
-      this.patchNodes(container, [zoomRoot], seenNodes);
+      // zoom 根是页面标题，它的 children 就是当前页面内容。即使该节点在全文档视图中
+      // 处于折叠态，进入 zoom 后也必须展开根；后代节点仍保留各自的折叠状态。
+      this.patchNodes(container, [zoomRoot], seenNodes, 0, zoomRoot.id);
       desired = [container];
     } else {
       desired = doc.blocks.map((block) => this.patchBlock(block, seenNodes));
@@ -141,13 +143,14 @@ export class Renderer {
     nodes: readonly OutlineNode[],
     seen: Set<string>,
     depth = 0,
+    forceExpandedId: string | null = null,
   ): void {
     const desired: HTMLElement[] = [];
 
     for (const node of nodes) {
       seen.add(node.id);
       // 折叠态挂在数据层 id 上：镜像视图与原视图共享同一份折叠状态
-      const folded = this.folded.has(originalIdOf(node.id));
+      const folded = node.id !== forceExpandedId && this.folded.has(originalIdOf(node.id));
       let view = this.nodes.get(node.id);
       if (!view) {
         if (this.created >= this.budget) {

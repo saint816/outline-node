@@ -222,6 +222,36 @@ test('外部 fs.writeFile 后文档与 session 同步', async () => {
   );
 });
 
+test('外部刷新后立即编辑并 Undo：只撤销 Webview 编辑，保留外部内容', async () => {
+  const uri = tempFile('external-undo.outline.md', '- [ ] task\n');
+  const { document, session } = await openOutline(uri);
+
+  fs.writeFileSync(uri.fsPath, '- [ ] task\n- external keep\n', 'utf8');
+  await waitFor(
+    () => document.getText() === '- [ ] task\n- external keep\n',
+    'document reloaded before edit',
+  );
+  await waitFor(
+    () => flatten(session.snapshot()).some((n) => n.text === 'external keep'),
+    'session refreshed before edit',
+  );
+
+  // 刻意不等待 edit 完成，复现 provider 连续收到 edit + requestUndo 的真实时序。
+  const edit = session.handleMessage({
+    type: 'edit',
+    baseVersion: document.version,
+    seq: 1,
+    ops: [{ op: 'toggleChecked', id: nodeByText(session, 'task').id }],
+  });
+  const undo = session.handleMessage({ type: 'requestUndo' });
+  await Promise.all([edit, undo]);
+
+  await waitFor(
+    () => document.getText() === '- [ ] task\n- external keep\n',
+    'undo webview edit without removing external content',
+  );
+});
+
 test('折叠状态写入 workspaceState，不写进 markdown 文件', async () => {
   const uri = tempFile('folding.outline.md', '- parent\n  - child\n');
   const { document, session } = await openOutline(uri);

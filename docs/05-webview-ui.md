@@ -241,6 +241,7 @@ Workflowy 式 `/` 菜单：在正文（`text` 字段）词首（行首或空白�
 ## Zoom（zoom.ts）
 
 - `zoomRootId: string | null`（null = 全文档）。zoom 状态下 renderer 只渲染该子树（见 07）；节点自身显示为页面标题（可编辑，仍是同一节点）。
+- zoom 根必须在当前页面强制展开：它的 children 就是页面内容，不能被该节点在全文档视图中的折叠态隐藏；后代节点仍遵守各自折叠态，退出 zoom 后根节点原有折叠态不变。
 - 面包屑：根 → … → 当前 zoom 节点的链路，每级可点击跳转；`Alt+←` 上跳一级。
 - 入口：点击 bullet、`Alt+→`。
 - 持久化：`vscode.setState({ zoomRootKey })`——存 nodeKey（见 06）而非 id（id 不跨 session），热恢复后解析回节点。
@@ -252,6 +253,7 @@ Workflowy 式 `/` 菜单：在正文（`text` 字段）词首（行首或空白�
 ## 侧栏（sidebar.ts）
 
 - 结构：`Starred`（有书签时才出现）→ `Home` + 其下的可展开大纲树。**`Home` 就是大纲区的标题行**：三角折叠整区、文字点击回全文档、zoom 在根时自身高亮——刻意不再单列一行 Home 再加一个 Outline 小标题（实机反馈：同一含义占两行）。分区标题都是折叠开关（`aria-expanded`），折叠键 `'starred'` / `'outline'` 随 `ViewState.sidebarSections` 持久化——收起 Starred 即可消掉「同一节点在两区各列一次」的重复观感。
+- 同一节点同时出现在 Starred 与 Home 树时，当前位置高亮只落在实际点击进入的那一份；从正文 bullet、面包屑、前进后退或热恢复进入时，默认高亮 Home 树中的规范位置，禁止两个副本同时 `.active`。
 - 缩进基准 `INDENT_BASE_PX = 17`（sidebar.ts）必须与 `.sidebar-item` 的 `padding-left: calc(17px + depth * 13px)` 一致：拖拽落点深度就是用横向像素反算的，改一处必须改另一处（测试 `dragSidebar` 里也有一份）。
 - 侧栏树的展开状态独立于主编辑区折叠，只存 webview 内存；渲染项封顶 `MAX_ITEMS`，护住 refresh patch 的性能红线（见 07）。
 - 观感约定：`Starred` 与 `Home` 是并列的一级入口，**必须同字号、同字重、同行高、同三角位**（两者排版不一致会立刻显得「样式不对」，实机否掉过一版）；当前位置用「淡底 + 左侧 2px 竖条 + 字重」，不用通栏 `list-activeSelectionBackground` 色块；星标/三角默认低透明度，hover 才提亮；层级除缩进外每级再降 12% 不透明度（最多两级）。颜色一律走 `--vscode-*`（见本文档开头的主题约定）。

@@ -2,6 +2,20 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [1.0.0] - 2026-08-01
+
+OutlineNode 进入 1.0：纯本地 Markdown 大纲编辑、折叠与 zoom、搜索、任务、备注、拖拽、镜像、图片、代码块、行内 Markdown、多选和原生 Undo/Redo 已形成完整闭环。本版同时修复发布前 GUI 回归发现的三个数据展示与历史顺序问题。
+
+### Fixed
+
+- **折叠节点无法从侧栏正常 zoom**：zoom 根现在在当前页面强制展开，因此即使它在 Home 视图中处于折叠状态，右侧仍会显示子节点；退出 zoom 后原折叠状态不变。
+- **Starred 与 Home 重复高亮**：同一节点同时出现在两个分区时，只高亮实际点击进入的那一份；正文、面包屑或历史导航进入时默认高亮 Home 中的规范位置。
+- **外部刷新后立即编辑再 Undo 可能删除外部内容**：host 现在严格串行处理 Webview 消息，确保 `requestUndo` 必须等待前一条 `workspace.applyEdit` 进入 VS Code 原生 undo 栈，只撤销用户刚做的 Webview 编辑。
+
+### Changed
+
+- 升级 `@vscode/test-electron` 至 3.1.0，兼容新版 macOS VS Code 将测试宿主可执行文件从 `Electron` 改名为 `Code`；发布前集成测试可继续在当前稳定版 VS Code 上运行。
+
 ## [0.10.0] - 2026-07-28
 
 行内 Markdown 终于「所见即所得」：代码、加粗、高亮、链接直接渲染成效果，点进去才看到记号。

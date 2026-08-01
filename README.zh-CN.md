@@ -1,5 +1,7 @@
 # OutlineNode
 
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/outlinenode.outline-node?label=Marketplace)](https://marketplace.visualstudio.com/items?itemName=outlinenode.outline-node)
+
 [English](README.md) · **简体中文**
 
 **Workflowy 风格的大纲编辑器，跑在纯本地 Markdown 文件上。**
@@ -17,6 +19,10 @@
 - **节点备注**：`Shift+Enter` 展开第二行，按缩进续行存储
 - **移动与拖拽**：`Alt+↑/↓` 移动，鼠标拖拽可跨层级
 - **实时搜索过滤**：保留祖先链，搜索时自动穿透折叠
+- **行内 Markdown**：行内代码、加粗、高亮与链接在阅读时直接显示效果，聚焦后回到可编辑源码
+- **代码块与图片**：代码高亮、语言切换、一键复制；图片可直接粘贴到笔记自己的 `assets/` 目录并行内预览
+- **侧栏与星标**：快速浏览、折叠和 zoom 到任意节点
+- **多选**：批量缩进、移动、完成、删除、复制或剪切，并作为一个 undo 步撤销
 - **镜像引用**：同一节点出现在多处并同步编辑，用的是 Obsidian 原生 `^id` / `![[#^id]]` 块嵌入语法
 - **完整中文 IME 支持**；`undo` / `redo` 直接用 VS Code 原生的，不另造一套
 
@@ -35,6 +41,10 @@
 | `↑` / `↓` | 在首 / 末行时跳到相邻节点 |
 | `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` | 撤销 / 重做（VS Code 原生） |
 | `Cmd/Ctrl+F` | 聚焦大纲内搜索框 |
+| `Shift+↑` / `Shift+↓` | 扩展节点多选范围 |
+| `Ctrl+B` / `Ctrl+H` | 加粗 / 高亮选中文字（非 macOS 为 `Ctrl+Alt+B` / `Ctrl+Alt+H`） |
+| `Ctrl+O` | 隐藏 / 显示已完成节点（非 macOS 为 `Ctrl+Alt+O`） |
+| `?` | 显示全部快捷键 |
 | `Esc` | 清除搜索 / 取消拖拽 |
 
 macOS 用 `Cmd`，Windows / Linux 用 `Ctrl`。
@@ -79,6 +89,7 @@ macOS 用 `Cmd`，Windows / Linux 用 `Ctrl`。
 | `outlineNode.defaultIndent` | `2-space` | 新文件或无法检测缩进时用的缩进单位（`2-space` / `4-space` / `tab`） |
 | `outlineNode.rememberFolding` | `true` | 是否记住折叠状态 |
 | `outlineNode.defaultFold` | `none` | 打开时的默认折叠（`none` / `firstLevel`） |
+| `outlineNode.cleanupUnusedImagesOnSave` | `true` | 保存后把 OutlineNode 生成且已无引用的 `pasted-*` 图片移到废纸篓 |
 
 已有文件的缩进单位从内容里自动检测，不会被配置覆盖。
 

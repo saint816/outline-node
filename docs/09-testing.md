@@ -43,6 +43,7 @@ interface SessionHost {
 - 竞态：in-flight edit 期间插入外部修改 → 后到的 edit 因 baseVersion 失配收到 `refresh{cause:'conflict'}`；
 - applyEdit 返回 false → `refresh{cause:'conflict'}` 且 mirrorDoc 与文本重新对齐;
 - undo：`requestUndo` → executeUndo → change → `refresh{cause:'undo'}`。
+- Undo 排队：外部 refresh 后让 `applyEdit` 延迟完成，并发投递 `edit` + `requestUndo`；断言 Undo 不会越过 edit 撤销外部内容。
 
 ## 3. webview DOM 测试（playwright，`test/webview/`）
 

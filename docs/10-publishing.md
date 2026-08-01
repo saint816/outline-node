@@ -9,13 +9,13 @@
   "name": "outline-node",
   "displayName": "OutlineNode — Workflowy-style Outliner",
   "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
-  "publisher": "<publisher-id>",
-  "version": "0.1.0",
+  "publisher": "outlinenode",
+  "version": "1.0.0",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Notebooks", "Other"],
   "keywords": ["outliner", "workflowy", "outline", "markdown", "obsidian", "logseq", "notes"],
   "icon": "media/icon.png",
-  "repository": { "type": "git", "url": "<repo-url>" },
+  "repository": { "type": "git", "url": "https://github.com/saint816/outline-node.git" },
   "license": "MIT",
   "galleryBanner": { "color": "#1e1e2e", "theme": "dark" }
 }
@@ -27,14 +27,14 @@
 
 ## 3. 实机验证
 
-`code --install-extension outline-node-0.1.0.vsix` 在干净 profile 验证：安装即用、`*.outline.md` 默认打开、Reopen With、undo/保存/热恢复、卸载干净。
+`code --install-extension outline-node-1.0.0.vsix` 在干净 profile 验证：安装即用、`*.outline.md` 默认打开、Reopen With、undo/保存/热恢复、卸载干净。
 
 ## 4. 账号与凭据
 
 1. Azure DevOps 创建组织（Marketplace 发布的官方通道）。
 2. 创建 PAT：scope 只勾 **Marketplace → Manage**，设置过期提醒。
 3. [Marketplace 管理页](https://marketplace.visualstudio.com/manage) 创建 publisher（id 与 package.json 一致）。
-4. 本地 `vsce login <publisher-id>`；CI 中 PAT 存 GitHub Secrets `VSCE_PAT`。
+4. 本地 `vsce login outlinenode`；CI 中 PAT 存 GitHub Secrets `VSCE_PAT`。
 5. Open VSX（覆盖 VSCodium/Cursor 用户）：注册 open-vsx.org 账号 + 签 Publisher Agreement，token 存 `OVSX_PAT`。
 
 ## 5. README（Marketplace 门面）
@@ -46,7 +46,7 @@
 
 ## 6. 发布
 
-- 首发：`vsce publish 0.1.0`。
+- `1.0.0`：`vsce publish 1.0.0`；之后按 SemVer 递增。
 - 自动化 `release.yml`：push tag `v*` → 全量测试 → `vsce publish -p $VSCE_PAT` → `ovsx publish -p $OVSX_PAT`。
 - 版本策略：SemVer；CHANGELOG 每版必写（Keep a Changelog 格式）。
 

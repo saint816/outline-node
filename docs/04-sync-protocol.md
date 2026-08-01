@@ -142,6 +142,11 @@ export class DocumentSession {
 
 内部状态：`mirrorDoc: OutlineDoc`（带 raw 的权威树）、`expectedTexts: string[]`（回声队列）、`externalDebounce: Timer`。
 
+`handleMessage` 必须把所有 W2H 消息放进同一条 Promise 队列，严格按到达顺序处理。provider 的
+`onDidReceiveMessage` 回调不能等待异步处理；若 `edit` 的 `workspace.applyEdit` 尚未完成时让紧随其后的
+`requestUndo` 并发执行，VS Code 可能撤销更早的外部文件变更，造成数据丢失。单条消息失败时只拒绝
+该次调用，队列尾必须吞掉该错误后继续，不能让后续消息永久失效。
+
 ### edit 处理流程
 
 1. `msg.baseVersion !== document.version` → 丢弃 ops，回 `refresh{cause:'conflict', snapshot: 当前 mirrorDoc}`。
