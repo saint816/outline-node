@@ -11,7 +11,7 @@ tags: [outline, demo]
   - [ ] 写规格
   - [x] 建仓库
 - 参考资料
-  - Workflowy ^ref9
+  - Local outliner ^ref9
   - Obsidian
 
 ## 小结

@@ -4,12 +4,12 @@
 
 ## 项目是什么
 
-**OutlineNode**：一个 Workflowy 风格的大纲笔记 VS Code 插件，最终发布到 VS Code Marketplace。
+**OutlineNode**：一个基于本地 Markdown 的大纲笔记 VS Code 插件，最终发布到 VS Code Marketplace。
 
 - 数据**完全基于本地文件**：标准 Markdown 缩进列表（`- ` 嵌套、`- [x]` 完成、缩进续行为节点备注），与 Obsidian/Logseq 互通，Git diff 可读。
 - 架构：`CustomTextEditorProvider` + Webview。**TextDocument 是唯一事实源**，undo/redo、脏标记、保存、热恢复全部由 VS Code 提供，不自己造。
 - UI：原生 TypeScript + 每节点一个 `contenteditable="plaintext-only"` div，**不使用任何运行时框架**（无 React/Vue/Svelte）。
-- 功能目标：完整 Workflowy 复刻——无限层级、Enter 拆分、Tab/Shift+Tab 缩进、Backspace 合并、折叠、Alt+↑↓ 移动、完成标记、节点备注、zoom-in + 面包屑、拖拽排序、实时搜索过滤、镜像引用。
+- 功能目标：完整的大纲编辑体验——无限层级、Enter 拆分、Tab/Shift+Tab 缩进、Backspace 合并、折叠、Alt+↑↓ 移动、完成标记、节点备注、zoom-in + 面包屑、拖拽排序、实时搜索过滤、镜像引用。
 
 ## 阅读顺序
 

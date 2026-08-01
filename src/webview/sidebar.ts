@@ -1,4 +1,4 @@
-// 内嵌左侧导航栏（Workflowy 风格）：可展开/折叠的大纲树 + 星标书签，点文字即 zoom，
+// 内嵌左侧导航栏：可展开/折叠的大纲树 + 星标书签，点文字即 zoom，
 // 拖拽整行即移动节点（复用主编辑区的 move op 与落点数学 resolvePlacement）。
 // 纯渲染 + 结构 op，不改数据格式、不落 UI 态到用户文件。侧栏的展开状态独立于主编辑区折叠——
 // 存 webview 内存，在侧栏展开不会折叠正文。渲染项封顶 MAX_ITEMS，护住 refresh patch 的性能红线。
@@ -183,7 +183,7 @@ export class SidebarView {
     }
   }
 
-  /** 分区标题本身就是折叠开关（Workflowy 的做法：Starred 收起后不再和大纲重复列同一节点）。 */
+  /** 分区标题本身就是折叠开关：Starred 收起后不再和大纲重复列同一节点。 */
   private section(title: string, key: string, open: boolean): HTMLElement {
     const el = document.createElement('button');
     el.type = 'button';

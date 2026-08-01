@@ -4,7 +4,7 @@
 
 [English](README.md) · **简体中文**
 
-**Workflowy 风格的大纲编辑器，跑在纯本地 Markdown 文件上。**
+**本地优先的大纲编辑器，直接运行在纯 Markdown 文件上。**
 
 ![OutlineNode demo](media/demo.gif)
 

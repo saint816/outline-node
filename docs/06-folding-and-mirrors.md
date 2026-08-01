@@ -49,7 +49,7 @@ export function nodeKey(node: OutlineNode, occurrenceIndex: number): string;
 | 镜像节点 | Obsidian 块嵌入语法（正文恰为此） | `- ![[#^k3f9a2]]` |
 
 - v1 仅支持**同文件**镜像；跨文件语法 `![[note#^k3f9a2]]` 预留不实现。
-- **选择理由**：两者都是 Obsidian 原生语法——在 Obsidian 里打开同一文件，镜像位置会**真实内联渲染原块内容**，互通是"语义等价"而非"不报错"；且 Obsidian 对指向 list item 的块嵌入会嵌入整个子树，恰好匹配 Workflowy 镜像含子树的语义。**不选 Logseq `((uuid))`**：非通用 markdown 语法，Obsidian 无法解析。
+- **选择理由**：两者都是 Obsidian 原生语法——在 Obsidian 里打开同一文件，镜像位置会**真实内联渲染原块内容**，互通是"语义等价"而非"不报错"；且 Obsidian 对指向 list item 的块嵌入会嵌入整个子树，恰好匹配本项目镜像引用包含子树的语义。**不选 Logseq `((uuid))`**：非通用 markdown 语法，Obsidian 无法解析。
 - blockId 生成：创建镜像时若原节点无 blockId，自动生成 6 位 base36 随机 id（文档内查重），通过 `setText` 之外的专用途径写入——实现为 op 扩展 `{ op: 'assignBlockId'; id: string; blockId: string }`（加入 04 的 Op 全集，语义：设置 blockId，raw 置 null）。
 
 ### 数据层：单份数据，渲染层展开

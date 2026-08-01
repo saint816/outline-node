@@ -179,7 +179,7 @@ function onEnter(caret: CaretPos, ctx: KeymapContext): void {
     }
   }
 
-  // 展开且有子节点、光标在行尾 → 新建第一个子节点（Workflowy 语义）
+  // 展开且有子节点、光标在行尾 → 新建第一个子节点
   const expanded = !ctx.store.isFolded(node.id);
   if (expanded && node.children.length > 0 && caret.offset >= node.text.length) {
     const id = ctx.newId();
@@ -238,7 +238,7 @@ function onMerge(caret: CaretPos, ctx: KeymapContext): void {
   if (!node || node.children.length > 0) return;
   const previous = ctx.store.previousNode(caret.nodeId);
   if (!previous) {
-    // 首节点无前驱：空节点直接删除、光标落到下一个可见节点（Workflowy 语义）。
+    // 首节点无前驱：空节点直接删除、光标落到下一个可见节点。
     // 非空节点保持 no-op（合并没有落点，删除会丢正文）；文档仅剩这一个节点时也不删。
     if (node.text !== '' || node.note !== null) return;
     const visible = ctx.store.visibleNodes();

@@ -70,7 +70,7 @@ describe('parseOutline — 行内剥离', () => {
     const nodes = flatten(doc).map((e) => e.node);
     expect(nodes[0].text).toBe('任务清单');
     expect(nodes[0].blockId).toBe('plan1');
-    expect(nodes.find((n) => n.blockId === 'ref9')?.text).toBe('Workflowy');
+    expect(nodes.find((n) => n.blockId === 'ref9')?.text).toBe('Local outliner');
     expect(nodes[1].blockId).toBeNull();
   });
 

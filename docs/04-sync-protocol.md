@@ -109,7 +109,7 @@ export function applyOp(doc: OutlineDoc, op: Op): OpResult;   // 原地修改 do
   - 「展开且有子节点的节点在行尾回车 → 新建第一个子节点」是 UI 决策（依赖折叠状态，op 层不感知）：keymap 此时改发 `insertSubtree{parentId: id, index: 0, nodes: [空节点]}`，不用 split。
 - **mergeWithPrevious**：目标 = 同一 ListBlock 内**先序遍历的前一个节点**（可能是父节点）。约束：本节点 `children` 非空 → no-op；本节点是 block 第一个节点 → no-op；本节点或目标是 mirror 行 → no-op。执行：`target.text += node.text`；note 合并（双方都有 → `'\n'` 连接，只有本节点有 → 移交）；删除本节点；双方 `raw = null`。caret 恢复位置（junction = 目标原 text 长度）由 webview 在 dispatch 前自行记录，不进 op。
 - **indent**：节点成为**前一个兄弟**的最后一个子节点（连同整棵子树）。无前一个兄弟 → no-op。
-- **outdent**：节点成为**其父节点的下一个兄弟**（连同子树）；原来位于它之后的同级兄弟保持在原父之下（Workflowy 语义）。已在 block 根层 → no-op。
+- **outdent**：节点成为**其父节点的下一个兄弟**（连同子树）；原来位于它之后的同级兄弟保持在原父之下。已在 block 根层 → no-op。
 - **moveUp / moveDown**：与前/后一个**兄弟**交换位置（子树整体移动）；边界 → no-op。跨层移动不在此 op 范围（用拖拽或 indent/outdent 组合）。
 - **move**：从当前位置摘除，插入到 `parentId` 的 `children[index]`（`parentId === null` → 所在 ListBlock 的 roots[index]）。约束：`parentId` 不得是本节点或其后代（成环，applyOp 内校验，违反 → no-op）；v1 拖拽限制在同一 ListBlock 内。
 - **toggleChecked**：`null → true`、`false → true`、`true → false`（决策理由见 02）。

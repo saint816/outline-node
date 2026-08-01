@@ -143,7 +143,7 @@ test('拖拽：不能把节点拖进自己的子树（无落点）', async ({ pa
   expect(await textsInDom(page)).toEqual(['alpha', 'child']);
 });
 
-test('粘贴：Workflowy 导出的缩进列表还原层级', async ({ page }) => {
+test('粘贴：外部大纲工具导出的缩进列表还原层级', async ({ page }) => {
   await openOutline(page, [node('a', '原有节点')]);
   await clearPosted(page);
   await focusText(page, 'a', 4);

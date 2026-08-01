@@ -1,4 +1,4 @@
-// 节点多选（Workflowy 语义）：Shift+↑/↓ 扩选、Shift+点击 选一段，然后
+// 节点多选：Shift+↑/↓ 扩选、Shift+点击选一段，然后
 // Tab / Shift+Tab / Alt+↑↓ / Cmd+Enter / Backspace / Cmd+C 批量作用在整个选区上。
 //
 // 纯 webview UI 状态：不落用户文件、不改协议、不新增 op——批量操作复用既有 op，
@@ -70,7 +70,7 @@ export class NodeSelection {
 
   /**
    * 选中的**子树根**（文档先序）：祖先已入选时后代被吸收。批量 op 只作用在根上，
-   * 子树自然跟着走——既符合 Workflowy 的「选中就是选中整棵」，也避免 indent/move
+   * 子树自然跟着走——选中节点即选中整棵子树，也避免 indent/move
    * 对同一棵子树重复施加。
    */
   roots(): string[] {
@@ -208,7 +208,7 @@ export function handleSelectionKeydown(e: KeyboardEvent, ctx: SelectionKeyContex
     if (!caret || caret.nodeId.includes('/')) return false; // 镜像视图不参与多选
     const editable = findEditable(caret.nodeId, caret.field);
     if (!editable) return false;
-    // 节点内还能继续扩文本选区时不抢：交给浏览器（Workflowy 也是先选文本再选节点）
+    // 节点内还能继续扩文本选区时不抢：先交给浏览器扩展文本选区
     if (dir === -1 ? !atFirstVisualLine(editable) : !atLastVisualLine(editable)) return false;
     sel.begin(caret.nodeId);
     if (!sel.extend(dir)) {

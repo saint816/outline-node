@@ -4,7 +4,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-**A Workflowy-style outliner for VS Code, running on plain local Markdown files.**
+**A local-first outliner for VS Code, running on plain Markdown files.**
 
 ![OutlineNode demo](media/demo.gif)
 

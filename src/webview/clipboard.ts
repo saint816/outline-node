@@ -41,7 +41,7 @@ function onPaste(event: ClipboardEvent, ctx: ClipboardContext): void {
 
   const text = event.clipboardData?.getData('text/plain') ?? '';
 
-  // 选中文字时粘贴一条 URL → 直接变成 [选中的字](url)（Workflowy / Notion 同款）。
+  // 选中文字时粘贴一条 URL → 直接变成 [选中的字](url)。
   // linkSelection 自己判断有没有选区：没选区返回 false，粘贴照常走浏览器默认插入。
   if (caret.field === 'text' && looksLikeUrl(text) && ctx.linkSelection(text.trim())) {
     event.preventDefault();

@@ -348,7 +348,7 @@ function outdent(doc: OutlineDoc, id: string): OpResult {
   const grand = locate(doc, found.parent.id);
   if (!grand) return NO_OP;
 
-  // 原来位于它之后的同级兄弟保持在原父之下（Workflowy 语义）
+  // 原来位于它之后的同级兄弟保持在原父之下
   found.siblings.splice(found.index, 1);
   grand.siblings.splice(grand.index + 1, 0, found.node);
   return CHANGED;

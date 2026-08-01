@@ -1,8 +1,8 @@
 {
   "name": "outline-node",
-  "displayName": "OutlineNode — Workflowy-style Outliner",
-  "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
-  "version": "1.0.0",
+  "displayName": "OutlineNode — Local Markdown Outliner",
+  "description": "Local-first outlining on plain Markdown files. Obsidian/Logseq compatible.",
+  "version": "1.0.1",
   "license": "MIT",
   "publisher": "outlinenode",
   "icon": "media/icon.png",
@@ -28,7 +28,7 @@
   ],
   "keywords": [
     "outliner",
-    "workflowy",
+    "local-first",
     "outline",
     "markdown",
     "obsidian",

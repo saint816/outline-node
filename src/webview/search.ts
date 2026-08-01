@@ -89,7 +89,7 @@ export function applyFilters(
   }
 }
 
-/** 已完成节点及其整棵子树的 id（隐藏已完成时整块收起，符合 Workflowy 语义）。 */
+/** 已完成节点及其整棵子树的 id（隐藏已完成时整块收起）。 */
 function collectCompletedSubtrees(blocks: readonly Block[]): Set<string> {
   const hidden = new Set<string>();
   const markSubtree = (node: OutlineNode): void => {

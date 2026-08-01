@@ -149,7 +149,7 @@ body {
    会让整页在打字时不停跳框（用户反馈）。高对比度主题下仍保留焦点提示，见文末
    forced-colors 段——那里没有可靠的光标可见性保证。 */
 
-/* 完成态走 Workflowy 风格：只给灰色删除线，不画 checkbox 方框（用户选择 B）。
+/* 完成态使用简洁样式：只给灰色删除线，不画 checkbox 方框（用户选择 B）。
    文件层仍是 - [x] / - [ ]，Obsidian 打开照旧渲染勾选框——那是 markdown 任务语法的固有含义。 */
 .node-row.checked > .text {
   color: var(--vscode-descriptionForeground);
@@ -1049,7 +1049,7 @@ body {
   padding-left: 4px;
 }
 
-/* 层级越深越淡：靠明度而不是缩进独扛层级信息（Workflowy 的做法） */
+/* 层级越深越淡：靠明度而不是只用缩进表达层级信息 */
 .sidebar-item .sidebar-label {
   opacity: calc(1 - 0.12 * min(var(--depth, 0), 2));
 }

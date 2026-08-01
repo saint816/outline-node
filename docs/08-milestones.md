@@ -42,7 +42,7 @@
 **内容**：搜索框实时过滤（祖先链保留、只切 class）；pointer 拖拽（指示线、水平偏移定深度、自动滚动、Esc 取消）；clipboard 粘贴拆子树 / 复制子树为 markdown。
 
 **验收**：
-- playwright webview 测试覆盖：拖拽改变层级后文档文本正确；粘贴 Workflowy 导出的缩进列表还原层级。
+- playwright webview 测试覆盖：拖拽改变层级后文档文本正确；粘贴外部大纲工具导出的缩进列表还原层级。
 
 ## M5 — 性能 + 打磨
 

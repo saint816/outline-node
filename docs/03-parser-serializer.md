@@ -41,7 +41,7 @@ default     → 逐行分类，见下
    - blockId：正文行尾匹配 `/ \^([A-Za-z0-9-]+)$/` → 存 `blockId`，剥掉后缀；
    - mirror：剥完后正文**恰为** `![[#^<id>]]` → `mirror = id`（此时 text 保留原文字符串，渲染层特殊处理，见 06）。
 4. **空行**：终结当前 ListBlock（若有），空行本身进 RawBlock。
-5. **其他一切**（标题、正文、表格、引用块…）：进 RawBlock。标题 `#` **不映射为层级**——映射会让 Tab/outdent 语义与标题级别纠缠，round-trip 风险大而收益低（Workflowy 用户不用标题组织层级）。
+5. **其他一切**（标题、正文、表格、引用块…）：进 RawBlock。标题 `#` **不映射为层级**——映射会让 Tab/outdent 语义与标题级别纠缠，round-trip 风险大而收益低（本项目只用列表缩进组织大纲层级）。
 
 连续的 RawBlock 行合并为一个 RawBlock；列表行序列构成 ListBlock。
 
@@ -59,7 +59,7 @@ default     → 逐行分类，见下
 
 - 收集 ListBlock 构建过程中所有**相邻父子列表行**的缩进差，取众数。
 - 任一列表行缩进含 `\t` → `{ kind: 'tab' }`（tab 优先）。
-- 无列表或无父子对 → 返回 null，调用方回退到配置 `outlineNode.defaultIndent`（默认 2 空格——Workflowy/Obsidian 导出的公约数；Logseq 用户可配 tab）。
+- 无列表或无父子对 → 返回 null，调用方回退到配置 `outlineNode.defaultIndent`（默认 2 空格，是 Markdown 大纲与 Obsidian 中常见的缩进；Logseq 用户可配 tab）。
 - 检测结果同时用于：note 续行列判定、新节点/重生成节点的序列化缩进。
 
 ## 序列化（serializer.ts）

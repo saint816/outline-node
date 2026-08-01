@@ -7,13 +7,13 @@
 ```json
 {
   "name": "outline-node",
-  "displayName": "OutlineNode — Workflowy-style Outliner",
-  "description": "Workflowy-style outlining on plain local Markdown files. Obsidian/Logseq compatible.",
+  "displayName": "OutlineNode — Local Markdown Outliner",
+  "description": "Local-first outlining on plain Markdown files. Obsidian/Logseq compatible.",
   "publisher": "outlinenode",
   "version": "1.0.0",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Notebooks", "Other"],
-  "keywords": ["outliner", "workflowy", "outline", "markdown", "obsidian", "logseq", "notes"],
+  "keywords": ["outliner", "local-first", "outline", "markdown", "obsidian", "logseq", "notes"],
   "icon": "media/icon.png",
   "repository": { "type": "git", "url": "https://github.com/saint816/outline-node.git" },
   "license": "MIT",
@@ -52,6 +52,6 @@
 
 ## 7. 发布后
 
-- Marketplace 页面自查（图标、gif 渲染、分类、搜索"workflowy"能命中）。
+- Marketplace 页面自查（名称、描述、图标、gif、分类和关键词均与当前独立品牌定位一致）。
 - 干净机器（或 VS Code 全新 profile）从 Marketplace 安装验证。
 - GitHub：开 Issues 模板（bug / feature）、Discussions；README 顶部加 Marketplace badge。

@@ -75,10 +75,10 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 
 | 按键 | 语义 |
 |---|---|
-| `Enter` | 光标处拆分：`split{id, offset, newId}`；特例——节点展开且有子节点且光标在行尾 → `insertSubtree{parentId:id, index:0, nodes:[空节点]}`（新建第一个子节点，Workflowy 语义） |
+| `Enter` | 光标处拆分：`split{id, offset, newId}`；特例——节点展开且有子节点且光标在行尾 → `insertSubtree{parentId:id, index:0, nodes:[空节点]}`（新建第一个子节点） |
 | `Shift+Enter` | 聚焦/创建 note（note 为 null 时 `setNote{note:''}` 并挂载 div）；note 内 `Shift+Enter` 插入换行，`Enter` 回到 text |
 | `Tab` / `Shift+Tab` | `indent` / `outdent`（preventDefault，光标偏移保持） |
-| `Backspace`（offset 0） | 有前驱 → `mergeWithPrevious`（dispatch 前记录 junction offset 恢复光标）；无前驱（首节点）且为空节点 → `delete` 该节点、光标移到下一个可见节点（Workflowy 语义）；无前驱且非空 → no-op（不丢正文）；文档仅剩一个节点时不删 |
+| `Backspace`（offset 0） | 有前驱 → `mergeWithPrevious`（dispatch 前记录 junction offset 恢复光标）；无前驱（首节点）且为空节点 → `delete` 该节点、光标移到下一个可见节点；无前驱且非空 → no-op（不丢正文）；文档仅剩一个节点时不删 |
 | `Alt+↑` / `Alt+↓` | `moveUp` / `moveDown` |
 | `Cmd/Ctrl+Enter` | `toggleChecked` |
 | ` ``` ` / ` ```lang ` + `Enter` | **代码块一律挂到该节点下**（`setText('')` + `setNote(围栏)`，一次 `dispatchAll`）。0.9.0 起顶层空节点不再走 `toCodeBlock`——文档级块没有 bullet，拖不动也缩不进去（见 02） |
@@ -97,7 +97,7 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 
 ## 多选（selection.ts）
 
-Workflowy 式的节点多选。**纯 webview UI 状态**：不写文件、不改协议、不新增 op。
+节点多选。**纯 webview UI 状态**：不写文件、不改协议、不新增 op。
 
 - **进入**：`Shift+↑/↓` —— 判据与 `↑/↓` 跨节点移动相同（在首/末视觉行才接管），节点内还能扩文本选区时让给浏览器；或 `Shift+点击`另一个节点选中区间（同节点内的 Shift+点击仍是扩文本选区）。
 - **退出**：`Esc`、打字（`input`）、任意普通鼠标按下（挂 document 级，点侧栏/工具条也退出）、`Cmd/Ctrl+Z`（undo 会重塑整棵树）。
@@ -172,7 +172,7 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 - **纯逻辑在 `format.ts`**（`toggleMarker` / `toggleLink`），不碰 DOM，靠单测覆盖；语义是「再按一次取消」——选区两侧紧邻标记、或选区自身就是 `**…**`，都识别为取消。
 - **工具条是主入口**：选中文字浮出 B / 高亮 / 代码 / 链接。按钮的 `mousedown` 必须 `preventDefault`，否则按下的瞬间选区就没了。
 - **快捷键只能挑 VS Code 没占的组合**（`formatKeyOf`）：mac `Ctrl+B` / `Ctrl+H`，其他平台 `Ctrl+Alt+B` / `Ctrl+Alt+H`。理由同 `Ctrl+O`：webview 按键会转发给工作台，`preventDefault` 拦不住原生绑定。
-- **选中文字时粘贴 URL → 直接包成 `[选中的字](url)`**（Workflowy / Notion 同款）。判据 `looksLikeUrl` 刻意**从严**：单个 token，且带 `http(s)`/`mailto` 协议或 `www.` 前缀——宁可漏判走普通粘贴，也不能把普通文字误当链接吞掉选中内容。选区折叠时 `applyFormat(requireSelection)` 返回 false，粘贴照常走浏览器默认插入。选中的整段本身已是链接时，给了新 url 就**换地址**（不是还原成纯文字，那是工具条 `url === ''` 的语义）。
+- **选中文字时粘贴 URL → 直接包成 `[选中的字](url)`**。判据 `looksLikeUrl` 刻意**从严**：单个 token，且带 `http(s)`/`mailto` 协议或 `www.` 前缀——宁可漏判走普通粘贴，也不能把普通文字误当链接吞掉选中内容。选区折叠时 `applyFormat(requireSelection)` 返回 false，粘贴照常走浏览器默认插入。选中的整段本身已是链接时，给了新 url 就**换地址**（不是还原成纯文字，那是工具条 `url === ''` 的语义）。
 - **施加走 `store.setNodeText`（打字热路径，不 emit）**：所以要自己把新文本写回 DOM、`sidebar.syncText` 跟上、再用 `selectRange` 重设选区——选中的仍是内容而非标记，可以连点两次叠加 `**==x==**`。
 
 ## 图片（images.ts + lightbox.ts）
@@ -211,7 +211,7 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 
 ## 斜杠插入菜单（slashMenu.ts）
 
-Workflowy 式 `/` 菜单：在正文（`text` 字段）词首（行首或空白后）输入 `/` 弹出可过滤菜单，`/` 后连续非空白串为 query。↑↓ 选、Enter/Tab 确认、Esc 忽略（同一 token 不再自动弹）、光标移出 token 或失焦即关。菜单由 `input` 委托在 `setNodeText` 之后 `sync()` 重算；`keydown` 在 keymap 之前拦导航键（激活且有匹配时）。
+`/` 插入菜单：在正文（`text` 字段）词首（行首或空白后）输入 `/` 弹出可过滤菜单，`/` 后连续非空白串为 query。↑↓ 选、Enter/Tab 确认、Esc 忽略（同一 token 不再自动弹）、光标移出 token 或失焦即关。菜单由 `input` 委托在 `setNodeText` 之后 `sync()` 重算；`keydown` 在 keymap 之前拦导航键（激活且有匹配时）。
 
 条目复用现有 op、不改数据模型：
 
