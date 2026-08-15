@@ -214,9 +214,10 @@ export class Store {
           index: found.index,
           blockId: found.block.id,
         });
-        if (this.searchQuery !== '' || !this.folded.has(found.node.id)) {
-          walk(found.node.children, 1, found.node.id, found.block.id);
-        }
+        // zoom 根在 renderer 中始终强制展开：它的 children 就是当前页面内容。
+        // 键盘可见顺序必须与 DOM 一致，不能继续沿用全文档视图里的 folded 状态，
+        // 否则画面能看到子节点，Shift+↓ 却会误判为已到列表末尾。
+        walk(found.node.children, 1, found.node.id, found.block.id);
         return out;
       }
     }

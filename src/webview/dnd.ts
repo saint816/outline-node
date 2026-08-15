@@ -23,6 +23,7 @@ export function installDragAndDrop(root: HTMLElement, store: Store): void {
   let target: DropTarget | null = null;
   let scrollTimer: number | null = null;
   let indicator: HTMLElement | null = null;
+  let pointerId: number | null = null;
 
   const indentPx = (): number => {
     const raw = getComputedStyle(root).getPropertyValue('--outline-indent').trim();
@@ -41,6 +42,9 @@ export function installDragAndDrop(root: HTMLElement, store: Store): void {
       clearInterval(scrollTimer);
       scrollTimer = null;
     }
+    root.classList.remove('drag-select-lock');
+    if (pointerId !== null && root.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
+    pointerId = null;
     dragId = null;
     active = false;
     target = null;
@@ -48,10 +52,15 @@ export function installDragAndDrop(root: HTMLElement, store: Store): void {
 
   root.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    if (e.shiftKey) return; // Shift+点击圆点属于节点多选，不启动拖拽准备态
     const bullet = (e.target as HTMLElement | null)?.closest?.('.bullet');
     if (!bullet) return;
     const id = bullet.closest<HTMLElement>('.node')?.dataset.id;
     if (!id) return;
+    // 从按下圆点开始就禁止浏览器拉文本选区；pointer capture 保证移出根节点也能收到结束事件。
+    e.preventDefault();
+    pointerId = e.pointerId;
+    root.classList.add('drag-select-lock');
     dragId = id;
     startX = e.clientX;
     startY = e.clientY;
@@ -63,6 +72,7 @@ export function installDragAndDrop(root: HTMLElement, store: Store): void {
     if (!active) {
       if (Math.hypot(e.clientX - startX, e.clientY - startY) < DRAG_THRESHOLD_PX) return;
       active = true;
+      if (pointerId !== null) root.setPointerCapture(pointerId);
       root.querySelector<HTMLElement>(`.node[data-id="${cssEscape(dragId)}"]`)?.classList.add('dragging');
       indicator = document.createElement('div');
       indicator.className = 'drop-indicator';

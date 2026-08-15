@@ -71,13 +71,17 @@ test.describe('5000 节点性能基准', () => {
     const patched = await page.evaluate(
       async ({ snapshot }) => {
         const next = structuredClone(snapshot) as {
-          blocks: { roots: { text: string; children: unknown[] }[] }[];
+          blocks: { roots: { id: string; text: string; children: unknown[] }[] }[];
         };
         // 改动分散在树里的三个节点，模拟一次外部编辑
         const targets = [0, 5, 9];
+        let lastTarget: { id: string; text: string } | null = null;
         for (const i of targets) {
           const node = next.blocks[0].roots[i];
-          if (node) node.text = '外部改动 ' + i;
+          if (node) {
+            node.text = '外部改动 ' + i;
+            lastTarget = { id: node.id, text: node.text };
+          }
         }
 
         const start = performance.now();
@@ -89,7 +93,14 @@ test.describe('5000 节点性能基准', () => {
         });
         await new Promise<void>((resolve) => {
           const check = (): void => {
-            if (document.body.innerText.includes('外部改动 9')) resolve();
+            // 只读取已知变更节点：textContent 验证 patch 已落 DOM，但不会像 body.innerText
+            // 那样遍历 5000 节点并强制全页布局，把无关排版成本算进 patch 基准。
+            const changed = lastTarget
+              ? document.querySelector<HTMLElement>(
+                  `.node[data-id="${CSS.escape(lastTarget.id)}"] [data-field="text"]`,
+                )
+              : null;
+            if (changed?.textContent === lastTarget?.text) resolve();
             else requestAnimationFrame(check);
           };
           requestAnimationFrame(check);

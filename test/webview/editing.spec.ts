@@ -111,6 +111,77 @@ test('有子节点时行首 Backspace 不合并（no-op 不产生消息）', asy
   expect(await textsInDom(page)).toEqual(['foo', 'bar', 'child']);
 });
 
+test('空父节点 Backspace 删除父壳并按原序提升子节点（一个 undo 步）', async ({ page }) => {
+  await openOutline(page, [node('p', '', [node('c1', '一'), node('c2', '二')]), node('after', '后')]);
+  await focusText(page, 'p', 0);
+  await clearPosted(page);
+
+  await page.keyboard.press('Backspace');
+  const edit = await waitForEdit(page);
+  expect(edit.ops).toEqual([
+    { op: 'outdent', id: 'c2' },
+    { op: 'outdent', id: 'c1' },
+    { op: 'delete', id: 'p' },
+  ]);
+  expect(await textsInDom(page)).toEqual(['一', '二', '后']);
+  await expect(page.locator('.list-block > .node[data-id="c1"]')).toHaveCount(1);
+  await expect(page.locator('.list-block > .node[data-id="c2"]')).toHaveCount(1);
+  expect(await caretState(page)).toEqual({ id: 'c1', offset: 0 });
+});
+
+test('带备注或代码块的空父节点 Backspace 不误删', async ({ page }) => {
+  await openOutline(page, [
+    { ...node('note', '', [node('note-child', '备注子项')]), note: '说明' },
+    { ...node('code', '', [node('code-child', '代码子项')]), note: '```ts\nconst x = 1;\n```' },
+  ]);
+  await clearPosted(page);
+
+  await focusText(page, 'note', 0);
+  await page.keyboard.press('Backspace');
+  await focusText(page, 'code', 0);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(300);
+
+  expect(await posted(page)).toEqual([]);
+  expect(await textsInDom(page)).toEqual(['', '备注子项', '', '代码子项']);
+  await expect(page.locator('.node[data-id="code"] .node-code')).toHaveCount(1);
+});
+
+test('Cmd/Ctrl+Shift+Backspace 删除叶节点；带后代时先确认且可取消', async ({ page }) => {
+  await openOutline(page, [node('p', '父', [node('c', '子')]), node('leaf', '叶')]);
+  await focusText(page, 'leaf', 1);
+  await clearPosted(page);
+  await page.keyboard.press('Control+Shift+Backspace');
+  expect((await waitForEdit(page)).ops).toEqual([{ op: 'delete', id: 'leaf' }]);
+
+  await inject(page, { type: 'ack', seq: 1, version: 2 });
+  await focusText(page, 'p', 1);
+  await clearPosted(page);
+  await page.keyboard.press('Control+Shift+Backspace');
+  await expect(page.locator('.confirm-dialog')).toBeVisible();
+  await expect(page.locator('.confirm-message')).toContainText('1 descendant');
+  await page.locator('.confirm-cancel').click();
+  expect(await posted(page)).toEqual([]);
+  await expect(page.locator('.node[data-id="p"]')).toHaveCount(1);
+
+  await page.keyboard.press('Control+Shift+Backspace');
+  await page.locator('.confirm-delete').click();
+  expect((await waitForEdit(page)).ops).toEqual([{ op: 'delete', id: 'p' }]);
+  await expect(page.locator('.node[data-id="p"]')).toHaveCount(0);
+});
+
+test('Cmd/Ctrl+Shift+Backspace 可删除文档中的唯一节点', async ({ page }) => {
+  await openOutline(page, [node('only', '唯一节点')]);
+  await clearPosted(page);
+  await focusText(page, 'only', 2);
+
+  await page.keyboard.press('Control+Shift+Backspace');
+
+  expect((await waitForEdit(page)).ops).toEqual([{ op: 'delete', id: 'only' }]);
+  await expect(page.locator('.node')).toHaveCount(0);
+  await expect(page.locator('#outline-placeholder')).toBeVisible();
+});
+
 test('首节点为空时 Backspace 删除该节点，光标落到下一个节点', async ({ page }) => {
   await openOutline(page, [node('e0', ''), node('n1', '1'), node('n2', '2')]);
   await clearPosted(page);

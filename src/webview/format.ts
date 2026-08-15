@@ -13,6 +13,25 @@ export interface FormatResult {
   end: number;
 }
 
+export interface LinkValue {
+  title: string;
+  url: string;
+}
+
+/** 选区恰好是一条完整 Markdown 链接时拆出标题与地址。 */
+export function parseLink(text: string): LinkValue | null {
+  const match = /^\[([^\]]*)\]\(([^)\n]*)\)$/.exec(text);
+  return match ? { title: match[1], url: match[2] } : null;
+}
+
+/** 用链接编辑框给定的标题与地址替换当前选区。 */
+export function setLink(text: string, start: number, end: number, value: LinkValue): FormatResult {
+  const [from, to] = start <= end ? [start, end] : [end, start];
+  const link = `[${value.title}](${value.url})`;
+  const caret = from + link.length;
+  return { text: text.slice(0, from) + link + text.slice(to), start: caret, end: caret };
+}
+
 /** 选区两侧紧邻标记（`**abc**` 里选中 `abc`）→ 去掉标记。 */
 function unwrapOutside(text: string, start: number, end: number, marker: Marker): FormatResult | null {
   const before = text.slice(Math.max(0, start - marker.length), start);
@@ -57,9 +76,9 @@ export function toggleLink(text: string, start: number, end: number, url = ''): 
   const body = text.slice(from, to);
 
   // 选区正好是一个完整链接：给了新 url 就换地址（粘贴覆盖），没给就还原成纯文字（再按一次取消）
-  const whole = /^\[([^\]]*)\]\(([^)\s]*)\)$/.exec(body);
+  const whole = parseLink(body);
   if (whole) {
-    const label = whole[1];
+    const label = whole.title;
     if (url !== '') {
       const next = `[${label}](${url})`;
       const caret = from + next.length;

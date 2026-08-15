@@ -45,6 +45,7 @@ export type MessageKey =
   | 'help.note'
   | 'help.indent'
   | 'help.merge'
+  | 'help.deleteNode'
   | 'help.move'
   | 'help.toggleChecked'
   | 'help.zoom'
@@ -63,20 +64,32 @@ export type MessageKey =
   | 'code.copied'
   | 'code.plain'
   | 'code.pickLang'
+  | 'code.expand'
+  | 'code.collapse'
   | 'help.codeIndent'
+  | 'help.codeTitle'
   | 'format.ariaLabel'
   | 'format.bold'
   | 'format.highlight'
   | 'format.code'
   | 'format.link'
+  | 'format.linkDialog'
+  | 'format.linkTitle'
+  | 'format.linkUrl'
+  | 'format.saveLink'
+  | 'format.cancel'
   | 'help.format'
   | 'help.multiSelect'
   | 'help.multiSelectClick'
   | 'slash.ariaLabel'
   | 'slash.noResults'
   | 'slash.codeBlock'
-  | 'slash.todo'
-  | 'slash.numbered';
+  | 'slash.codeTitleRequired'
+  | 'slash.numbered'
+  | 'deleteConfirm.title'
+  | 'deleteConfirm.message'
+  | 'deleteConfirm.cancel'
+  | 'deleteConfirm.delete';
 
 const EN: Record<MessageKey, string> = {
   'search.placeholder': 'Search nodes…',
@@ -110,7 +123,8 @@ const EN: Record<MessageKey, string> = {
   'help.split': 'Split node / new child',
   'help.note': 'Focus / create note',
   'help.indent': 'Indent / outdent',
-  'help.merge': 'Merge with previous',
+  'help.merge': 'Merge with previous / unwrap an empty parent',
+  'help.deleteNode': 'Delete the current node or selection',
   'help.move': 'Move node up / down',
   'help.toggleChecked': 'Toggle completed',
   'help.zoom': 'Zoom in / out',
@@ -129,20 +143,32 @@ const EN: Record<MessageKey, string> = {
   'code.copied': 'Copied',
   'code.plain': 'text',
   'code.pickLang': 'Change language',
+  'code.expand': 'Expand code',
+  'code.collapse': 'Collapse code',
   'help.codeIndent': 'Indent / outdent this node',
+  'help.codeTitle': 'Insert a code block, then fill its required title',
   'format.ariaLabel': 'Text formatting',
   'format.bold': 'Bold',
   'format.highlight': 'Highlight',
   'format.code': 'Inline code',
   'format.link': 'Link',
+  'format.linkDialog': 'Edit link',
+  'format.linkTitle': 'Title',
+  'format.linkUrl': 'URL',
+  'format.saveLink': 'Save link',
+  'format.cancel': 'Cancel',
   'help.format': 'Bold / highlight the selection',
   'help.multiSelect': 'Select multiple nodes (Tab / Alt+↑↓ / Cmd+Enter / Backspace apply to all)',
   'help.multiSelectClick': 'Extend the selection to the clicked node',
   'slash.ariaLabel': 'Insert menu',
   'slash.noResults': 'No matches',
   'slash.codeBlock': 'Code block',
-  'slash.todo': 'To-do',
+  'slash.codeTitleRequired': 'Enter a node title before inserting a code block',
   'slash.numbered': 'Numbered list',
+  'deleteConfirm.title': 'Delete subtree?',
+  'deleteConfirm.message': 'Delete {roots} selected node(s) and {descendants} descendant(s)? This can be undone.',
+  'deleteConfirm.cancel': 'Cancel',
+  'deleteConfirm.delete': 'Delete',
 };
 
 const ZH: Record<MessageKey, string> = {
@@ -177,7 +203,8 @@ const ZH: Record<MessageKey, string> = {
   'help.split': '拆分节点 / 新建子节点',
   'help.note': '聚焦 / 创建备注',
   'help.indent': '缩进 / 反缩进',
-  'help.merge': '与上一个节点合并',
+  'help.merge': '与上一个节点合并 / 解包空父节点',
+  'help.deleteNode': '删除当前节点或多选节点',
   'help.move': '上移 / 下移节点',
   'help.toggleChecked': '切换完成状态',
   'help.zoom': 'Zoom in / out',
@@ -196,20 +223,32 @@ const ZH: Record<MessageKey, string> = {
   'code.copied': '已复制',
   'code.plain': '纯文本',
   'code.pickLang': '切换语言',
+  'code.expand': '展开代码',
+  'code.collapse': '收起代码',
   'help.codeIndent': '缩进 / 反缩进该节点',
+  'help.codeTitle': '插入代码块后填写必填标题',
   'format.ariaLabel': '文字排版',
   'format.bold': '加粗',
   'format.highlight': '高亮',
   'format.code': '行内代码',
   'format.link': '链接',
+  'format.linkDialog': '编辑链接',
+  'format.linkTitle': '标题',
+  'format.linkUrl': '链接',
+  'format.saveLink': '保存链接',
+  'format.cancel': '取消',
   'help.format': '加粗 / 高亮选中的文字',
   'help.multiSelect': '多选节点（Tab / Alt+↑↓ / Cmd+Enter / Backspace 批量生效）',
   'help.multiSelectClick': '把选区扩到点击的节点',
   'slash.ariaLabel': '插入菜单',
   'slash.noResults': '无匹配',
   'slash.codeBlock': '代码块',
-  'slash.todo': '待办',
+  'slash.codeTitleRequired': '请先填写节点标题，再插入代码块',
   'slash.numbered': '有序列表',
+  'deleteConfirm.title': '删除子树？',
+  'deleteConfirm.message': '将删除 {roots} 个选中节点及 {descendants} 个后代，可通过撤销恢复。',
+  'deleteConfirm.cancel': '取消',
+  'deleteConfirm.delete': '删除',
 };
 
 export function t(key: MessageKey): string {

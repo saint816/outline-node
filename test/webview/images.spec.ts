@@ -118,17 +118,31 @@ test('粘贴图片：光标处插入 ![[pasted-…]]，发出带 base64 的 save
 
 // 顶层空节点曾被转成「文档级代码块」，那种块没有 bullet：拖不动、缩进不了（实机反馈）。
 // 现在一律挂到节点下，节点连同 bullet 保留。
-test('顶层空根节点打 ```lang 回车 → 代码块挂到该节点下，节点与 bullet 保留', async ({ page }) => {
-  await openOutline(page, [node('a', ''), node('b', 'after')]);
+test('空节点打“```lang”回车仍创建代码块，并聚焦必填标题行', async ({ page }) => {
+  await openOutline(page, [node('a', '')]);
   await focusText(page, 'a', 0);
   await page.keyboard.type('```js');
   await page.keyboard.press('Enter');
 
-  const area = page.locator('.node[data-id="a"] > .node-row > .node-code textarea.code-input');
+  const title = page.locator('.node[data-id="a"] > .node-row > [data-field="text"]');
+  await expect(page.locator('.node[data-id="a"] > .node-code textarea.code-input')).toHaveCount(1);
+  await expect(page.locator('.node[data-id="a"] .code-lang')).toHaveText('js');
+  await expect(title).toBeFocused();
+  await expect(title).toHaveAttribute('data-placeholder', /Enter a node title/);
+});
+
+test('顶层节点打“标题 + ```lang”回车 → 标题保留、代码块挂在标题行下方', async ({ page }) => {
+  await openOutline(page, [node('a', ''), node('b', 'after')]);
+  await focusText(page, 'a', 0);
+  await page.keyboard.type('示例 ```js');
+  await page.keyboard.press('Enter');
+
+  const area = page.locator('.node[data-id="a"] > .node-code textarea.code-input');
   await expect(area).toHaveCount(1);
   await expect(area).toBeFocused();
   await expect(area).toHaveValue('');
   await expect(page.locator('.node[data-id="a"] .code-lang')).toHaveText('js');
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText('示例');
   // 节点还在，圆点也在（能拖、能缩进）
   await expect(page.locator('.node[data-id="a"] > .node-row > .bullet')).toBeVisible();
   await expect(page.locator('.node[data-id="b"]')).toHaveCount(1);
@@ -136,20 +150,23 @@ test('顶层空根节点打 ```lang 回车 → 代码块挂到该节点下，节
   await expect(page.locator('#outline-root > .list-block > .raw-block.code-block')).toHaveCount(0);
 });
 
-test('嵌套节点上打 ```ts 回车 → 代码块挂到该节点下（note 围栏块），节点保留', async ({ page }) => {
+test('嵌套节点上打“标题 + ```ts”回车 → 标题与节点保留', async ({ page }) => {
   await openOutline(page, [node('a', 'root', [node('a1', '')])]);
   await focusText(page, 'a1', 0);
   await clearPosted(page);
-  await page.keyboard.type('```ts');
+  await page.keyboard.type('嵌套示例 ```ts');
   await page.keyboard.press('Enter');
 
-  const area = page.locator('.node[data-id="a1"] > .node-row > .node-code textarea.code-input');
+  const area = page.locator('.node[data-id="a1"] > .node-code textarea.code-input');
   await expect(area).toHaveCount(1);
   await expect(area).toBeFocused();
-  await expect(page.locator('.node[data-id="a1"] > .node-row > .node-code .code-lang')).toHaveText('ts');
+  await expect(page.locator('.node[data-id="a1"] > .node-code .code-lang')).toHaveText('ts');
+  await expect(page.locator('.node[data-id="a1"] > .node-row > [data-field="text"]')).toHaveText(
+    '嵌套示例',
+  );
   await expect(page.locator('.node[data-id="a1"]')).toHaveCount(1); // 节点没被吃掉
 
-  // 一次 dispatchAll：setText('') + setNote(围栏) 同属一条 edit（= 一个 undo 步）。
+  // 一次 dispatchAll：setText(标题) + setNote(围栏) 同属一条 edit（= 一个 undo 步）。
   // 打字那条 edit 先占住 inFlight，ack 排空队列后才轮到这条。
   await inject(page, { type: 'ack', seq: 1, version: 2 });
   await page.waitForFunction(
@@ -196,26 +213,28 @@ test('节点代码块：编辑经 setNote 上报（保留首尾围栏），空�
   await expect(page.locator('.node[data-id="a"]')).toHaveCount(1);
 });
 
-test('代码块节点（正文为空）：代码块排进节点行内，上方不留空行', async ({ page }) => {
+test('旧文档的空标题代码块显示必填标题行，代码块始终位于标题下方', async ({ page }) => {
   await openOutline(page, [
     { id: 'a', text: '', note: '```js\nconst x = 1;\n```', children: [] },
     { id: 'b', text: '有标题', note: '```js\nconst y = 2;\n```', children: [] },
   ]);
 
-  // 正文为空 → 块在行内；正文有字 → 块仍在行下方（那时代码是附加内容）
-  await expect(page.locator('.node[data-id="a"] > .node-row > .node-code')).toHaveCount(1);
-  await expect(page.locator('.node[data-id="b"] > .node-row > .node-code')).toHaveCount(0);
+  await expect(page.locator('.node[data-id="a"] > .node-row')).toHaveClass(/code-title-missing/);
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveAttribute(
+    'data-placeholder',
+    /Enter a node title/,
+  );
+  await expect(page.locator('.node[data-id="a"] > .node-row > .node-code')).toHaveCount(0);
+  await expect(page.locator('.node[data-id="a"] > .node-code')).toHaveCount(1);
   await expect(page.locator('.node[data-id="b"] > .node-code')).toHaveCount(1);
 
   const geom = await page.evaluate(() => {
     const box = (sel: string): DOMRect => document.querySelector(sel)!.getBoundingClientRect();
     const rowA = box('.node[data-id="a"] > .node-row');
     const codeA = box('.node[data-id="a"] .node-code');
-    return { rowH: rowA.height, codeH: codeA.height, offset: codeA.top - rowA.top };
+    return { rowBottom: rowA.bottom, codeTop: codeA.top };
   });
-  // 行高就是代码块的高度（不再多出一条 22px 的空 bullet 行）
-  expect(geom.rowH - geom.codeH).toBeLessThanOrEqual(8);
-  expect(geom.offset).toBeLessThanOrEqual(6);
+  expect(geom.codeTop).toBeGreaterThanOrEqual(geom.rowBottom);
 });
 
 test('节点代码块内 Cmd/Ctrl+Enter 在其后新建同级节点并聚焦', async ({ page }) => {

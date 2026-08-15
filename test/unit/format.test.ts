@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { looksLikeUrl, toggleLink, toggleMarker } from '../../src/webview/format.js';
+import { looksLikeUrl, parseLink, setLink, toggleLink, toggleMarker } from '../../src/webview/format.js';
 
 describe('toggleMarker', () => {
   it('给选区加标记，选中的仍是内容', () => {
@@ -60,6 +60,21 @@ describe('toggleLink', () => {
     const r = toggleLink(src, 2, src.indexOf(')') + 1, 'https://c.d');
     expect(r.text).toBe('看 [文档](https://c.d) 吧');
     expect(r.start).toBe(r.end);
+  });
+});
+
+describe('链接编辑框纯逻辑', () => {
+  it('解析完整 Markdown 链接', () => {
+    expect(parseLink('[标题](https://example.com)')).toEqual({ title: '标题', url: 'https://example.com' });
+    expect(parseLink('前缀 [标题](url)')).toBeNull();
+  });
+
+  it('用可编辑标题和 URL 替换选区', () => {
+    expect(setLink('看 旧文 吧', 2, 4, { title: '新文', url: 'https://example.com' })).toEqual({
+      text: '看 [新文](https://example.com) 吧',
+      start: 27,
+      end: 27,
+    });
   });
 });
 

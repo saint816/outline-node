@@ -76,7 +76,7 @@ describe('setText / setNote / toggleChecked', () => {
     expect(serializeOutline(doc)).toBe('- [x] a\n');
   });
 
-  it('setChecked：普通节点 → 未勾选任务（null → false，斜杠菜单 To-do 用）', () => {
+  it('setChecked：普通节点 → 未勾选任务（保留 null / false / true 三态兼容）', () => {
     const doc = parse('- a\n');
     const id = idOf(doc, 'a');
     expect(applyOp(doc, { op: 'setChecked', id, checked: false }).changed).toBe(true);

@@ -18,6 +18,12 @@ test('折叠按钮有 aria-expanded 与中文标签', async ({ page }) => {
   const toggle = page.locator('.node[data-id="a"] > .node-row > .toggle');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(toggle).toHaveAttribute('aria-label', 'Collapse');
+  const size = await toggle.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  });
+  expect(size.width).toBeGreaterThanOrEqual(24);
+  expect(size.height).toBeGreaterThanOrEqual(24);
 
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');

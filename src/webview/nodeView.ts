@@ -31,8 +31,6 @@ export class NodeView {
   private noteEl: HTMLElement | null = null;
   /** note 整体是围栏代码块时的代码块 DOM（与 noteEl 二选一，见 syncNote）。 */
   private noteCodeEl: HTMLElement | null = null;
-  /** 代码块是否挂在节点行内（正文为空的「代码块节点」）。 */
-  private noteCodeInline = false;
   private hintEl: HTMLElement | null = null;
   private imagesEl: HTMLElement | null = null;
   private imagesKey = '';
@@ -224,18 +222,14 @@ export class NodeView {
     }
     if (this.noteCodeEl === null) this.noteCodeEl = div('node-code raw-block code-block');
 
-    // 正文为空 = 这个节点就是一个代码块：把块挂进行内，别在它上面留一条空 bullet 行
-    // （同图片节点，见 syncImages）。正文有字时仍挂在行下方——那时代码是附加内容。
-    const inline = node.text === '';
-    this.row.classList.toggle('code-only', inline);
-    const parent = inline ? this.row : this.el;
-    if (this.noteCodeEl.parentElement !== parent || inline !== this.noteCodeInline) {
-      // 行内时挂在正文**之后**：正文为空（宽度 0）看不出差别，但一旦正文获得焦点，
-      // 它会占住 bullet 右边这一行、代码块顺势折到下一行 —— 像个标题栏。
-      // 反过来（代码块在前）焦点一来就在代码块下方冒出一条空输入框，很像 bug（实机反馈）。
-      if (inline) this.row.append(this.noteCodeEl);
-      else this.el.insertBefore(this.noteCodeEl, this.childrenEl);
-      this.noteCodeInline = inline;
+    // 标题是节点正文，必须始终占据独立一行；代码块永远挂在标题行下方。
+    // 旧文档若存在空标题，不擅自写入占位文本，只显示可编辑的“标题必填”提示。
+    const missingTitle = node.text.trim() === '';
+    this.row.classList.toggle('code-title-missing', missingTitle);
+    if (missingTitle) this.textEl.dataset.placeholder = t('slash.codeTitleRequired');
+    else delete this.textEl.dataset.placeholder;
+    if (this.noteCodeEl.parentElement !== this.el) {
+      this.el.insertBefore(this.noteCodeEl, this.childrenEl);
     }
 
     // 正在编辑本块时绝不重建 textarea，否则打断输入（同 updateRawBlockView）
@@ -249,7 +243,8 @@ export class NodeView {
       this.syncNoteCode(fence, node);
       return;
     }
-    this.row.classList.remove('code-only');
+    this.row.classList.remove('code-title-missing');
+    delete this.textEl.dataset.placeholder;
     // note 被删掉（空块 Backspace）时无条件摘除：此刻焦点正在这个 textarea 里，
     // 若照搬「正在编辑就不动」的守卫，代码块会赖着不走。
     if (

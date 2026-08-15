@@ -5,7 +5,7 @@
 // 串是过滤 query。无匹配时只显示占位提示、不拦截 Enter（让普通拆分照常发生）。
 //
 // 条目复用现有 op：代码块 setText+setNote（挂到该节点下，节点保留 bullet）、
-// 待办 setChecked(false)、编号 toggleOrdered。所有条目都先删掉 `/query` 再转换。
+// 编号 toggleOrdered。所有条目都先删掉 `/query` 再转换。
 
 import type { CaretPos } from './caret.js';
 import { caretRect, saveCaret } from './caret.js';
@@ -23,11 +23,11 @@ export interface SlashMenuContext {
 }
 
 interface SlashItem {
-  key: 'code' | 'todo' | 'numbered';
+  key: 'code' | 'numbered';
   label: () => string;
   hint?: () => string;
   keywords: string[];
-  enabled(node: OutlineNode, ctx: SlashMenuContext): boolean;
+  enabled(node: OutlineNode, ctx: SlashMenuContext, textWithoutToken: string): boolean;
 }
 
 const ITEMS: SlashItem[] = [
@@ -38,12 +38,6 @@ const ITEMS: SlashItem[] = [
     // 任何节点都能挂代码块（写进该节点的 note）。已有备注的节点除外：
     // note 只有一份，代码块会顶掉原备注。
     enabled: (node) => node.note === null && node.mirror === null,
-  },
-  {
-    key: 'todo',
-    label: () => t('slash.todo'),
-    keywords: ['todo', 'task', 'check', 'checkbox', '待办', '任务', '复选'],
-    enabled: (node) => node.mirror === null,
   },
   {
     key: 'numbered',
@@ -60,6 +54,10 @@ function slashToken(text: string, caret: number): { start: number; query: string
   if (i < 0 || text[i] !== '/') return null;
   if (i > 0 && !/\s/.test(text[i - 1])) return null;
   return { start: i, query: text.slice(i + 1, caret) };
+}
+
+function removeSlashToken(text: string, start: number, end: number): string {
+  return text.slice(0, start).trimEnd() + text.slice(end);
 }
 
 export class SlashMenu {
@@ -102,8 +100,11 @@ export class SlashMenu {
     this.start = token.start;
     this.end = caret.offset;
     const q = token.query.toLowerCase();
+    const textWithoutToken = removeSlashToken(node.text, token.start, caret.offset);
     this.results = ITEMS.filter(
-      (it) => it.enabled(node, this.ctx) && (q === '' || it.keywords.some((k) => k.includes(q))),
+      (it) =>
+        it.enabled(node, this.ctx, textWithoutToken) &&
+        (q === '' || it.keywords.some((k) => k.includes(q))),
     );
     this.selected = 0;
     this.open = true;
@@ -182,12 +183,18 @@ export class SlashMenu {
     if (!node) return this.close();
 
     // 其余条目节点保留：先删掉 /query，再转换；光标落到删除处
-    const newText = node.text.slice(0, this.start) + node.text.slice(this.end);
+    const newText = removeSlashToken(node.text, this.start, this.end);
 
     if (item.key === 'code') {
       // 一律挂到该节点下（见 docs/05「代码块」），顶层空壳也不例外——转成文档级块会丢掉
       // bullet，拖不动也缩进不了（实机反馈）。一次 dispatchAll = 一个 undo 步
-      this.ctx.focusNoteCode(node.id);
+      // 空标题也允许先创建，随后把光标留在始终可见的标题行要求补填；不能为了“标题必填”
+      // 把 Code 入口藏掉，否则用户连代码块都无法触发。
+      if (newText.trim() === '') {
+        this.ctx.setNextCaret({ nodeId: node.id, field: 'text', offset: 0 });
+      } else {
+        this.ctx.focusNoteCode(node.id);
+      }
       this.ctx.store.dispatchAll([
         { op: 'setText', id: node.id, text: newText },
         { op: 'setNote', id: node.id, note: emptyFence('') },
@@ -198,10 +205,7 @@ export class SlashMenu {
     this.ctx.setNextCaret(caret);
     this.ctx.store.dispatch({ op: 'setText', id: node.id, text: newText });
 
-    if (item.key === 'todo') {
-      this.ctx.setNextCaret(caret);
-      this.ctx.store.dispatch({ op: 'setChecked', id: node.id, checked: false });
-    } else if (item.key === 'numbered' && !node.ordered) {
+    if (item.key === 'numbered' && !node.ordered) {
       this.ctx.setNextCaret(caret);
       this.ctx.store.dispatch({ op: 'toggleOrdered', id: node.id });
     }

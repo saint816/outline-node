@@ -221,7 +221,7 @@ function toggleChecked(doc: OutlineDoc, id: string): OpResult {
   return CHANGED;
 }
 
-/** 直接设定完成态（斜杠菜单 To-do 用：toggleChecked 表达不了 null→false 的未勾选任务）。 */
+/** 直接设定完成态；保留 null / false / true 三态兼容，批量完成等入口复用。 */
 function setChecked(doc: OutlineDoc, id: string, checked: boolean | null): OpResult {
   const found = locate(doc, id);
   if (!found) return NO_OP;

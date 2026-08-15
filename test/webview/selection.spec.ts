@@ -155,6 +155,12 @@ test('Backspace 批量删除整段（含子树），光标落到选区前一行'
   await clearPosted(page);
 
   await page.keyboard.press('Backspace');
+  await expect(page.locator('.confirm-dialog')).toBeVisible();
+  // 取消不应破坏现有多选；再次删除并确认。
+  await page.locator('.confirm-cancel').click();
+  expect(await selectedIds(page)).toEqual(['a', 'b']);
+  await page.keyboard.press('Backspace');
+  await page.locator('.confirm-delete').click();
   expect(await textsInDom(page)).toEqual(['X', 'C']);
   expect(await lastEditOps(page)).toEqual(['delete', 'delete']);
   expect(await selectedIds(page)).toEqual([]);

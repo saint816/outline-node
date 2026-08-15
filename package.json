@@ -2,7 +2,7 @@
   "name": "outline-node",
   "displayName": "OutlineNode — Local Markdown Outliner",
   "description": "Local-first outlining on plain Markdown files. Obsidian/Logseq compatible.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "MIT",
   "publisher": "outlinenode",
   "icon": "media/icon.png",

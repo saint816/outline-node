@@ -67,14 +67,32 @@ test('再点一次取消（选区两侧就是标记）', async ({ page }) => {
   await expect(textEl(page)).toHaveText('abc def');
 });
 
-test('点链接：包成 [文字]()，光标停在括号里', async ({ page }) => {
+test('点链接弹出双输入框，标题默认选中文字，提交后光标落在链接末尾', async ({ page }) => {
   await openOutline(page, [node('a', '看 文档 吧')]);
   await selectText(page, 'a', 2, 4);
   await page.locator('.format-link').click();
 
-  await expect(textEl(page)).toHaveText('看 [文档]() 吧');
+  const inputs = page.locator('.link-popover-input');
+  await expect(inputs.nth(0)).toHaveValue('文档');
+  await expect(inputs.nth(1)).toBeFocused();
+  await inputs.nth(1).fill('https://example.com');
+  await page.keyboard.press('Enter');
+  await expect(textEl(page)).toHaveText('看 [文档](https://example.com) 吧');
   const offset = await page.evaluate(() => window.getSelection()?.focusOffset);
-  expect(offset).toBe(7); // "看 [文档](" 之后
+  expect(offset).toBe('看 [文档](https://example.com)'.length);
+});
+
+test('链接弹层可编辑现有链接，Esc 取消时恢复原选区', async ({ page }) => {
+  const source = '看 [旧标题](https://old.example) 吧';
+  await openOutline(page, [node('a', source)]);
+  await selectText(page, 'a', 2, source.length - 2);
+  await page.locator('.format-link').click();
+  const inputs = page.locator('.link-popover-input');
+  await expect(inputs.nth(0)).toHaveValue('旧标题');
+  await expect(inputs.nth(1)).toHaveValue('https://old.example');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.link-popover')).toHaveCount(0);
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('[旧标题](https://old.example)');
 });
 
 test('mac 快捷键 Ctrl+B / Ctrl+H 施加加粗与高亮', async ({ page }) => {

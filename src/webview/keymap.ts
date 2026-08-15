@@ -30,6 +30,8 @@ export interface KeymapContext {
   focusCodeBlock(blockId: string): void;
   /** 给节点挂上代码块后，把焦点放进该节点的代码块 textarea。 */
   focusNoteCode(nodeId: string): void;
+  /** 显式删除当前节点；是否确认由 Webview 外壳统一决定。 */
+  requestDeleteNode(nodeId: string): void;
 }
 
 export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
@@ -71,6 +73,12 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
 
   const caret = saveCaret();
   if (!caret) return;
+
+  if (mod && e.shiftKey && e.key === 'Backspace') {
+    e.preventDefault();
+    ctx.requestDeleteNode(caret.nodeId);
+    return;
+  }
 
   if (mod && e.key === '.') {
     e.preventDefault();
@@ -162,18 +170,23 @@ function onEnter(caret: CaretPos, ctx: KeymapContext): void {
     return;
   }
 
-  // 打 ``` / ```lang 回车 → 代码块**挂到该节点下**（setNote 写入围栏块，文件里缩进在该项内容列下）。
+  // 打「``` / ```lang」或「标题 + 空格 + ``` / ```lang」回车 → 代码块挂到该节点下。
   // 顶层空壳节点曾经被转成文档级代码块（toCodeBlock）——那是 0.4.0 代码块还不能嵌套时的权宜之计，
   // 副作用是块没有 bullet：拖不动、缩进不了、也选不中（实机反馈）。现在一律挂节点。
   // `toCodeBlock` op 保留：文件里本来就位于顶层的围栏块仍按文档级块渲染（那是 Markdown 的事实结构）。
-  const fence = /^```(\w*)$/.exec(node.text);
+  const fence = /^(?:(.+?)\s+)?```(\w*)$/.exec(node.text);
   if (fence && node.mirror === null) {
+    const title = (fence[1] ?? '').trimEnd();
     if (node.note === null) {
-      ctx.focusNoteCode(node.id);
-      // 一次 dispatchAll = 一条 edit = 一个 undo 步（清掉 ``` 与挂上代码块是一个动作）
+      if (title.trim() === '') {
+        ctx.setNextCaret({ nodeId: node.id, field: 'text', offset: 0 });
+      } else {
+        ctx.focusNoteCode(node.id);
+      }
+      // 一次 dispatchAll = 一条 edit = 一个 undo 步（保留标题、清掉围栏 token、挂代码块）
       ctx.store.dispatchAll([
-        { op: 'setText', id: node.id, text: '' },
-        { op: 'setNote', id: node.id, note: emptyFence(fence[1]) },
+        { op: 'setText', id: node.id, text: title },
+        { op: 'setNote', id: node.id, note: emptyFence(fence[2] ?? '') },
       ]);
       return;
     }
@@ -235,7 +248,19 @@ function onTab(caret: CaretPos, ctx: KeymapContext, shift: boolean): void {
 
 function onMerge(caret: CaretPos, ctx: KeymapContext): void {
   const node = ctx.store.findNode(caret.nodeId);
-  if (!node || node.children.length > 0) return;
+  if (!node) return;
+  if (node.children.length > 0) {
+    // 空父节点是结构壳：删壳但保留内容。逆序 outdent 才能维持孩子原顺序；
+    // dispatchAll 把整个动作合成一个 VS Code undo 步。
+    if (node.text !== '' || node.note !== null || node.mirror !== null) return;
+    const first = node.children[0];
+    ctx.setNextCaret({ nodeId: first.id, field: 'text', offset: 0 });
+    ctx.store.dispatchAll([
+      ...[...node.children].reverse().map((child) => ({ op: 'outdent' as const, id: child.id })),
+      { op: 'delete', id: node.id },
+    ]);
+    return;
+  }
   const previous = ctx.store.previousNode(caret.nodeId);
   if (!previous) {
     // 首节点无前驱：空节点直接删除、光标落到下一个可见节点。

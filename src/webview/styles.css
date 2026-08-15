@@ -3,6 +3,8 @@
 :root {
   /* 一级缩进的像素宽度；拖拽用它把水平偏移换算成目标深度 */
   --outline-indent: 17px;
+  /* toggle 24 + gap 4 + bullet 16 + gap 4；备注、代码块和图片共用。 */
+  --node-content-offset: 48px;
   --sidebar-width: 220px;
   --sidebar-collapsed-width: 30px;
 }
@@ -71,8 +73,8 @@ body {
 
 .toggle {
   flex: 0 0 auto;
-  width: 14px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   background: none;
@@ -84,7 +86,7 @@ body {
 
 .toggle::before {
   content: '▾';
-  font-size: 10px;
+  font-size: 14px;
 }
 
 .node:hover > .node-row > .toggle,
@@ -99,7 +101,8 @@ body {
 .bullet {
   flex: 0 0 auto;
   width: 16px;
-  height: 22px;
+  height: 24px;
+  touch-action: none;
   cursor: grab;
   position: relative;
 }
@@ -108,7 +111,7 @@ body {
   content: '';
   position: absolute;
   left: 4px;
-  top: 8px;
+  top: 9px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -172,7 +175,7 @@ body {
 }
 
 .note {
-  margin-left: 34px;
+  margin-left: var(--node-content-offset);
   font-size: 0.92em;
   color: var(--vscode-descriptionForeground);
 }
@@ -231,11 +234,11 @@ body {
 .zoomed > .node > .node-row > .text {
   font-size: 1.5em;
   font-weight: 600;
+  margin-left: 10px;
 }
 
 /* zoom 根当页面标题：标题首字与子节点圆点左边缘对齐（实机反馈）。
-   toggle 完全不占位、bullet 占位但隐藏 —— 于是标题起点 = 16px + 4px gap + 2px padding
-   = 22px，正好是子节点圆点的左边缘（toggle 14 + gap 4 + bullet 内 left:4）。
+   toggle 完全不占位、bullet 占位但隐藏；上方 margin 抵消 toggle 扩到 24px 后的差值。
    两个都 display:none 会贴到最左、两个都 visibility:hidden 又比子节点还靠右。 */
 .zoomed > .node > .node-row > .toggle {
   display: none;
@@ -292,6 +295,12 @@ body {
 
 #outline-root {
   position: relative;
+}
+
+#outline-root.drag-select-lock,
+#outline-root.drag-select-lock * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .node.dragging > .node-row {
@@ -382,6 +391,114 @@ body {
   font-size: 0.8em;
 }
 
+.link-popover {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  width: min(320px, calc(100vw - 8px));
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 14px var(--vscode-widget-shadow, transparent);
+}
+
+.link-popover-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  font: inherit;
+}
+
+.link-popover-input:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+.link-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.link-popover-actions button {
+  padding: 3px 10px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.link-popover-actions .link-popover-save {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 72%, transparent);
+}
+
+.confirm-dialog {
+  width: min(420px, 100%);
+  padding: 16px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 6px 24px var(--vscode-widget-shadow, transparent);
+}
+
+.confirm-title {
+  margin: 0 0 8px;
+  font-size: 1.1em;
+}
+
+.confirm-message {
+  margin: 0 0 14px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.confirm-cancel {
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+}
+
+.confirm-delete {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+.confirm-actions button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
 /* ---------- 行内 Markdown（inline.ts：未聚焦=显示态，聚焦=源码态） ---------- */
 
 .md-code {
@@ -415,6 +532,28 @@ body {
   color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
 }
 
+.source-highlighting::highlight(outline-md-syntax) {
+  color: var(--vscode-descriptionForeground);
+}
+
+.source-highlighting::highlight(outline-md-code) {
+  color: var(--vscode-charts-orange, var(--vscode-terminal-ansiYellow));
+  background: var(--vscode-textCodeBlock-background);
+}
+
+.source-highlighting::highlight(outline-md-bold) {
+  color: var(--vscode-charts-blue, var(--vscode-terminal-ansiBlue));
+}
+
+.source-highlighting::highlight(outline-md-mark) {
+  background: var(--vscode-editor-findMatchHighlightBackground, var(--vscode-badge-background));
+}
+
+.source-highlighting::highlight(outline-md-link) {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+}
+
 /* ---------- 图片 ---------- */
 
 /* 节点正文里的图片预览（源码仍在正文里可编辑） */
@@ -422,7 +561,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 4px 0 4px 34px;
+  margin: 4px 0 4px var(--node-content-offset);
 }
 
 .node-image {
@@ -489,6 +628,7 @@ body {
 /* ---------- 代码块 ---------- */
 
 .raw-block.code-block {
+  position: relative;
   padding: 0;
   background: none;
 }
@@ -547,38 +687,14 @@ body {
 
 /* 挂在节点下的代码块（= 该节点的 note 恰为围栏块）：缩进对齐到正文列 */
 .node-code.raw-block {
-  margin: 4px 0 4px 34px;
+  margin: 4px 0 4px var(--node-content-offset);
 }
 
-/* 「代码块节点」（正文为空）：块直接排在 bullet 右边，不在它上面留一条空行。
-   行允许换行，聚焦空正文时它才折到代码块下方单独成行（basis 100%）。 */
-.node-row.code-only {
-  flex-wrap: wrap;
-}
-
-.node-row > .node-code.raw-block {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 2px 0;
-}
-
-.node-row.code-only > .text:not(:focus) {
-  flex: 0 0 0;
-  width: 0;
-  min-height: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-/* 正文获得焦点时它占住 bullet 右边这一行，代码块折到下一行；折下去的块要缩进到
-   正文那一列（toggle 14 + gap 4 + bullet 16 + gap 4 = 38px），否则会贴到最左像脱缰。 */
-.node-row.code-only > .text:focus {
-  flex: 1 0 auto;
-}
-
-.node-row.code-only > .text:focus ~ .node-code.raw-block {
-  flex: 1 0 100%;
-  margin-left: 38px;
+.node-row.code-title-missing > .text:empty::before {
+  content: attr(data-placeholder);
+  color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+  font-style: italic;
+  pointer-events: none;
 }
 
 /* 代码块头部：浮在代码块右上角，**不占布局高度**——占一行会把「块排进节点行」顶掉，
@@ -622,6 +738,42 @@ body {
    差一个像素整块代码就会「重影」。改任一条都要两边一起改。 */
 .code-body {
   position: relative;
+}
+
+.raw-block.code-block.code-tall:not(.code-expanded) .code-body {
+  max-height: 240px;
+  overflow: hidden;
+}
+
+.raw-block.code-block.code-tall:not(.code-expanded)::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  height: 44px;
+  pointer-events: none;
+  background: linear-gradient(transparent, var(--vscode-textCodeBlock-background));
+}
+
+.code-expand {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  min-height: 26px;
+  border: 0;
+  border-top: 1px solid var(--vscode-panel-border, transparent);
+  border-radius: 0 0 4px 4px;
+  color: var(--vscode-textLink-foreground);
+  background: var(--vscode-textCodeBlock-background);
+  font: inherit;
+  cursor: pointer;
+}
+
+.code-expand:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  background: var(--vscode-toolbar-hoverBackground);
 }
 
 .raw-block.code-block .code-hl,

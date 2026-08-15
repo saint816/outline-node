@@ -1,4 +1,4 @@
-// 斜杠插入菜单（/ → Code/To-do/编号）。i18n 默认 en：条目文案 Code block / To-do / Numbered list。
+// 斜杠插入菜单（/ → Code/编号）。To-do 入口已移除，已有任务节点能力仍由 core 保留。
 import { expect, test } from '@playwright/test';
 import { clearPosted, focusText, inject, node, openOutline } from './support.js';
 
@@ -26,44 +26,60 @@ async function waitForOp(
   );
 }
 
-test('输入 / 在空的顶层节点弹出菜单，含 Code/To-do/Numbered', async ({ page }) => {
+test('空标题节点的 / 菜单仍提供 Code 和 Numbered', async ({ page }) => {
   await openOutline(page, [node('a', '')]);
   await focusText(page, 'a', 0);
   await page.keyboard.type('/');
 
   const menu = page.locator('.slash-menu');
   await expect(menu).toBeVisible();
-  await expect(menu.locator('.slash-item')).toHaveText([/Code block/, /To-do/, /Numbered list/]);
+  await expect(menu.locator('.slash-item')).toHaveText([/Code block/, /Numbered list/]);
 });
 
-test('/code + Enter：空顶层节点也挂成节点代码块（保留 bullet，能拖能缩进）', async ({ page }) => {
+test('/code 可先创建代码块；空标题时聚焦必填标题行', async ({ page }) => {
   await openOutline(page, [node('a', ''), node('b', 'after')]);
   await focusText(page, 'a', 0);
   await page.keyboard.type('/code');
   await expect(page.locator('.slash-menu .slash-item')).toHaveText([/Code block/]);
   await page.keyboard.press('Enter');
 
-  const area = page.locator('.node[data-id="a"] > .node-row > .node-code textarea.code-input');
+  const title = page.locator('.node[data-id="a"] > .node-row > [data-field="text"]');
+  await expect(page.locator('.node[data-id="a"] > .node-code textarea.code-input')).toHaveCount(1);
+  await expect(title).toBeFocused();
+  await expect(title).toHaveAttribute('data-placeholder', /Enter a node title/);
+  await expect(page.locator('.node[data-id="a"] > .node-row')).toHaveClass(/code-title-missing/);
+});
+
+test('有标题的 /code 创建后标题始终保留', async ({ page }) => {
+  await openOutline(page, [node('a', '解析 YAML '), node('b', 'after')]);
+  await focusText(page, 'a', 8);
+  await page.keyboard.type('/code');
+  await expect(page.locator('.slash-menu .slash-item')).toHaveText([/Code block/]);
+  await page.keyboard.press('Enter');
+
+  const area = page.locator('.node[data-id="a"] > .node-code textarea.code-input');
   await expect(area).toHaveCount(1);
   await expect(area).toBeFocused();
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText(
+    '解析 YAML',
+  );
   await expect(page.locator('.node[data-id="a"] > .node-row > .bullet')).toBeVisible();
   await expect(page.locator('.node[data-id="b"]')).toHaveCount(1);
   await expect(page.locator('#outline-root > .list-block > .raw-block.code-block')).toHaveCount(0);
 });
 
-test('/todo + Enter：删掉 /todo 并把节点设为未勾选任务（setChecked false）', async ({ page }) => {
+test('/todo 不再提供类型入口，Enter 按普通节点拆分处理', async ({ page }) => {
   await openOutline(page, [node('a', '')]);
   await focusText(page, 'a', 0);
   await clearPosted(page);
   await page.keyboard.type('/todo');
+  await expect(page.locator('.slash-menu .slash-empty')).toBeVisible();
   await page.keyboard.press('Enter');
-
-  // 第一条 edit 发出「/todo」占位后 inFlight，ack 排空队列才补发 setText '' + setChecked
-  await inject(page, { type: 'ack', seq: 1, version: 2 });
-  await waitForOp(page, 'setChecked', false);
-  await expect(page.locator('.slash-menu')).toBeHidden();
-  // /todo 文本被删掉，节点正文回空
-  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText('');
+  const edits = (await page.evaluate(() => (window as never as EditWindow).__posted)).filter(
+    (message) => message.type === 'edit',
+  );
+  expect(edits.some((message) => (message.ops ?? []).some((op) => op.op === 'setChecked'))).toBe(false);
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText('/todo');
 });
 
 test('/num + Enter：删掉 /num 并转有序列表（toggleOrdered）', async ({ page }) => {
@@ -78,9 +94,9 @@ test('/num + Enter：删掉 /num 并转有序列表（toggleOrdered）', async (
   await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText('');
 });
 
-test('嵌套节点上 /code：代码块挂到该节点下（setNote 围栏块），节点仍在', async ({ page }) => {
-  await openOutline(page, [node('a', 'root', [node('a1', '')])]);
-  await focusText(page, 'a1', 0);
+test('嵌套节点上标题 + /code：代码块挂到标题行下方', async ({ page }) => {
+  await openOutline(page, [node('a', 'root', [node('a1', '示例 ')])]);
+  await focusText(page, 'a1', 3);
   await clearPosted(page);
   await page.keyboard.type('/code');
   await expect(page.locator('.slash-menu .slash-item')).toHaveText([/Code block/]);
@@ -88,7 +104,7 @@ test('嵌套节点上 /code：代码块挂到该节点下（setNote 围栏块）
 
   // 节点保留，代码块挂在它下面并获得焦点
   await expect(page.locator('.node[data-id="a1"]')).toHaveCount(1);
-  const area = page.locator('.node[data-id="a1"] > .node-row > .node-code textarea.code-input');
+  const area = page.locator('.node[data-id="a1"] > .node-code textarea.code-input');
   await expect(area).toHaveCount(1);
   await expect(area).toBeFocused();
   // 顶层文档级代码块不该出现

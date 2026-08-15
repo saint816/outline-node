@@ -113,6 +113,19 @@ test('拖拽：同层重排（水平偏移决定深度）', async ({ page }) => 
   expect(await textsInDom(page)).toEqual(['alpha', 'gamma', 'beta']);
 });
 
+test('从圆点拖过正文不会产生浏览器文本选区，结束后解除 user-select 锁', async ({ page }) => {
+  await openOutline(page, [node('a', 'alpha'), node('b', 'beta')]);
+  const bullet = (await page.locator('.node[data-id="b"] > .node-row > .bullet').boundingBox())!;
+  const text = (await page.locator('.node[data-id="a"] [data-field="text"]').boundingBox())!;
+  await page.mouse.move(bullet.x + 6, bullet.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(text.x + text.width, text.y + text.height / 2, { steps: 6 });
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('');
+  await expect(page.locator('#outline-root')).toHaveClass(/drag-select-lock/);
+  await page.mouse.up();
+  await expect(page.locator('#outline-root')).not.toHaveClass(/drag-select-lock/);
+});
+
 test('拖拽：Esc 取消，不产生任何 op', async ({ page }) => {
   await openOutline(page, [node('a', 'alpha'), node('b', 'beta')]);
   await clearPosted(page);
@@ -210,6 +223,8 @@ test('剪切：复制子树并删除节点', async ({ page }) => {
   });
 
   expect(copied).toBe('- cut me\n  - child\n');
+  await expect(page.locator('.confirm-dialog')).toBeVisible();
+  await page.locator('.confirm-delete').click();
   expect((await waitForEdit(page)).ops).toEqual([{ op: 'delete', id: 'b' }]);
   expect(await textsInDom(page)).toEqual(['keep']);
   expect(await caretState(page)).toEqual({ id: 'a', offset: 4 });

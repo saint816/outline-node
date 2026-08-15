@@ -49,7 +49,15 @@ test('侧栏列出顶层节点，点击即 zoom 进子树', async ({ page }) => 
   await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Beta']);
 });
 
-test('侧栏 zoom 进已折叠节点时仍显示其子节点，退出后保留原折叠态', async ({ page }) => {
+test('侧栏进入节点后焦点回到正文，可立即 Shift+↓ 多选子节点', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha', [node('a1', 'A1'), node('a2', 'A2')])]);
+  await page.locator('.sidebar-item[data-id="a"] .sidebar-label').click();
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toBeFocused();
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(page.locator('.node[data-id="a"]')).toHaveClass(/selected/);
+});
+
+test('侧栏 zoom 进首个已折叠节点后可 Shift+↓ 多选子节点，退出仍保留折叠态', async ({ page }) => {
   await openOutline(page, [node('a', 'Alpha', [node('a1', 'A1'), node('a2', 'A2')])]);
 
   // 全文档视图中先折叠 Alpha；这是用户截图中「右侧只有标题」的触发条件。
@@ -60,6 +68,13 @@ test('侧栏 zoom 进已折叠节点时仍显示其子节点，退出后保留�
   await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Alpha']);
   await expect(page.locator('#outline-root .node[data-id="a1"]')).toBeVisible();
   await expect(page.locator('#outline-root .node[data-id="a2"]')).toBeVisible();
+
+  // renderer 强制展开 zoom 根后，selection 的可见顺序也必须包含这些子节点。
+  // 旧实现仍按 folded 截断 visibleRows，导致 Home 下第一个默认折叠节点无法扩选。
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toBeFocused();
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(page.locator('.node[data-id="a"]')).toHaveClass(/selected/);
+  await page.keyboard.press('Escape');
 
   // zoom 只覆盖渲染语义，不修改折叠 UI 状态；回 Home 后仍应是折叠的。
   await page.locator('.sidebar-home .sidebar-label').click();

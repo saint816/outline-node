@@ -63,6 +63,28 @@ test('未知语言 / 无语言不建高亮层，代码块照常可编辑', async
   await expect(page.locator('textarea.code-input')).toHaveValue('plain text');
 });
 
+test('超过 240px 的代码块默认收起，可展开；聚焦编辑会自动展开并保存 UI 状态', async ({ page }) => {
+  const longCode = Array.from({ length: 30 }, (_, i) => `const n${i} = ${i};`).join('\n');
+  await openOutline(page, [fence(`\`\`\`ts\n${longCode}\n\`\`\``)]);
+  const block = page.locator('.node-code.code-block');
+  await expect(block).toHaveClass(/code-tall/);
+  await expect(block).not.toHaveClass(/code-expanded/);
+  await expect(block.locator('.code-expand')).toHaveText('Expand code');
+
+  await block.locator('.code-expand').click();
+  await expect(block).toHaveClass(/code-expanded/);
+  await expect(block.locator('.code-expand')).toHaveText('Collapse code');
+  expect(
+    await page.evaluate(() =>
+      (window as never as { __state?: { expandedCodeKeys?: string[] } }).__state?.expandedCodeKeys,
+    ),
+  ).toContain('node:a');
+
+  await block.locator('.code-expand').click();
+  await block.locator('textarea.code-input').click();
+  await expect(block).toHaveClass(/code-expanded/);
+});
+
 test('打字时高亮跟着更新（只重画高亮层，不重建代码块）', async ({ page }) => {
   await openOutline(page, [fence('```ts\nconst n = 1;\n```')]);
   const area = page.locator('textarea.code-input');
@@ -127,7 +149,7 @@ test('波浪号围栏切换语言后仍是波浪号（字节保真）', async ({
   expect(open).toBe('~~~~go');
 });
 
-// 代码块节点的正文宽度为 0、点不到：Tab 若不接管，就完全没有缩进入口。
+// 代码 textarea 内 Tab 仍沿用大纲层级语义，焦点留在当前代码块。
 test('节点代码块里 Tab / Shift+Tab 缩进的是节点本身，焦点留在代码里', async ({ page }) => {
   await openOutline(page, [
     node('x', '前一个兄弟'),
@@ -146,19 +168,16 @@ test('节点代码块里 Tab / Shift+Tab 缩进的是节点本身，焦点留在
   await expect(page.locator('.list-block > .node[data-id="a"]')).toHaveCount(1);
 });
 
-test('代码块头部不占布局高度（块仍与 bullet 同排）', async ({ page }) => {
-  await openOutline(page, [{ id: 'a', text: '', note: '```ts\nx\n```', children: [] }]);
+test('代码块头部不额外撑高代码块', async ({ page }) => {
+  await openOutline(page, [{ id: 'a', text: '标题', note: '```ts\nx\n```', children: [] }]);
   const geom = await page.evaluate(() => {
     const box = (sel: string): DOMRect => document.querySelector(sel)!.getBoundingClientRect();
-    return { row: box('.node[data-id="a"] > .node-row').height, code: box('.node[data-id="a"] .node-code').height };
+    return { body: box('.node[data-id="a"] .code-body').height, code: box('.node[data-id="a"] .node-code').height };
   });
-  expect(geom.row - geom.code).toBeLessThanOrEqual(8);
+  expect(geom.code - geom.body).toBeLessThanOrEqual(8);
 });
 
-
-// Esc 曾经无条件回到「本节点正文」，而代码块节点的正文是空的、零宽——聚焦它只会在
-// 代码块旁边冒出一条空输入框，看着像 bug（实机反馈）。正文为空时改去相邻节点。
-test('代码块节点按 Esc 去相邻节点，不落在零宽的空正文上', async ({ page }) => {
+test('旧文档空标题代码块按 Esc 回到自身必填标题行', async ({ page }) => {
   await openOutline(page, [
     node('b', '上一个节点'),
     { id: 'a', text: '', note: '```ts\nx\n```', children: [] },
@@ -171,7 +190,7 @@ test('代码块节点按 Esc 去相邻节点，不落在零宽的空正文上', 
     node: document.activeElement?.closest('.node')?.getAttribute('data-id'),
     field: document.activeElement?.getAttribute('data-field'),
   }));
-  expect(at).toEqual({ node: 'b', field: 'text' });
+  expect(at).toEqual({ node: 'a', field: 'text' });
 });
 
 test('正文有字的代码块节点，Esc 仍回本节点正文', async ({ page }) => {
@@ -186,9 +205,7 @@ test('正文有字的代码块节点，Esc 仍回本节点正文', async ({ page
   expect(at).toEqual({ node: 'a', field: 'text' });
 });
 
-// 空正文一旦获得焦点（比如从上一个节点按 ↓ 进来），它占住 bullet 右边这一行、
-// 代码块折到下一行并缩进对齐；代码块绝不能跑到正文左边去。
-test('代码块节点的空正文获得焦点时，代码块折行并缩进对齐', async ({ page }) => {
+test('空标题获得焦点时标题行仍在代码块上方并对齐内容列', async ({ page }) => {
   await openOutline(page, [
     node('b', '上一个节点'),
     { id: 'a', text: '', note: '```ts\nx\n```', children: [] },
@@ -203,6 +220,6 @@ test('代码块节点的空正文获得焦点时，代码块折行并缩进对�
     const code = box('.node[data-id="a"] .node-code');
     return { textX: text.x, textBottom: text.bottom, codeX: code.x, codeY: code.y };
   });
-  expect(geom.codeY).toBeGreaterThanOrEqual(geom.textBottom - 2); // 折到下一行
+  expect(geom.codeY).toBeGreaterThanOrEqual(geom.textBottom - 2);
   expect(Math.abs(geom.codeX - geom.textX)).toBeLessThanOrEqual(4); // 与正文左缘对齐
 });

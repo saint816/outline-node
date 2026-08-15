@@ -13,7 +13,6 @@ import {
   atLastVisualLine,
   findEditable,
   saveCaret,
-  type CaretPos,
 } from './caret.js';
 import type { Store } from './store.js';
 
@@ -138,31 +137,6 @@ export class NodeSelection {
     this.store.dispatchAll(roots.map((id): Op => ({ op: 'setChecked', id, checked: !allChecked })));
   }
 
-  /** 删除选中的整棵子树；光标落到选区前一行，没有前一行则落到选区之后第一行。 */
-  deleteSelected(setNextCaret: (pos: CaretPos) => void): void {
-    const roots = this.roots();
-    if (roots.length === 0) return this.clear();
-    const target = this.caretTargetAfterDelete(roots);
-    if (target !== null) setNextCaret({ nodeId: target, field: 'text', offset: 0 });
-    this.store.dispatchAll(roots.map((id): Op => ({ op: 'delete', id })));
-    this.clear();
-  }
-
-  private caretTargetAfterDelete(roots: string[]): string | null {
-    const rows = this.store.visibleRows();
-    const rootSet = new Set(roots);
-    const covered = new Set<string>(); // 选中的根 + 其全部后代（都会随 delete 消失）
-    for (const row of rows) {
-      if (rootSet.has(row.node.id) || (row.parentId !== null && covered.has(row.parentId))) {
-        covered.add(row.node.id);
-      }
-    }
-    const first = rows.findIndex((r) => covered.has(r.node.id));
-    if (first === -1) return null;
-    if (first > 0) return rows[first - 1].node.id;
-    return rows.slice(first).find((r) => !covered.has(r.node.id))?.node.id ?? null;
-  }
-
   /**
    * 只增删 class、不动 DOM 结构（同搜索过滤的思路，见 docs/07）。
    * 选中的是子树根，CSS 让整棵子树跟着高亮 —— 与批量 op 的作用范围一致。
@@ -184,8 +158,8 @@ export class NodeSelection {
 
 export interface SelectionKeyContext {
   selection: NodeSelection;
-  /** patch 之后把光标放到这里（批量删除后的落点）。 */
-  setNextCaret(pos: CaretPos): void;
+  /** 由 main 统一执行删除确认、落点与 dispatch。 */
+  deleteSelection(): void;
 }
 
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock']);
@@ -244,7 +218,7 @@ export function handleSelectionKeydown(e: KeyboardEvent, ctx: SelectionKeyContex
   }
   if (e.key === 'Backspace' || e.key === 'Delete') {
     e.preventDefault();
-    sel.deleteSelected(ctx.setNextCaret);
+    ctx.deleteSelection();
     return true;
   }
   if (mod) {

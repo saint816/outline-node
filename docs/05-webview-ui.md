@@ -78,11 +78,12 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 | `Enter` | 光标处拆分：`split{id, offset, newId}`；特例——节点展开且有子节点且光标在行尾 → `insertSubtree{parentId:id, index:0, nodes:[空节点]}`（新建第一个子节点） |
 | `Shift+Enter` | 聚焦/创建 note（note 为 null 时 `setNote{note:''}` 并挂载 div）；note 内 `Shift+Enter` 插入换行，`Enter` 回到 text |
 | `Tab` / `Shift+Tab` | `indent` / `outdent`（preventDefault，光标偏移保持） |
-| `Backspace`（offset 0） | 有前驱 → `mergeWithPrevious`（dispatch 前记录 junction offset 恢复光标）；无前驱（首节点）且为空节点 → `delete` 该节点、光标移到下一个可见节点；无前驱且非空 → no-op（不丢正文）；文档仅剩一个节点时不删 |
+| `Backspace`（offset 0） | 正文为空、无 note / mirror 且有子节点 → 逆序 `outdent` 直接子节点后 `delete` 空父节点，一次 `dispatchAll`，子节点顺序不变；否则有前驱 → `mergeWithPrevious`；无前驱且为空叶节点 → `delete`；无前驱且非空 → no-op；文档仅剩一个节点时不删 |
+| `Cmd/Ctrl+Shift+Backspace` | 删除当前节点；多选时删除选区。范围含后代时先显示二次确认，叶节点直接删除 |
 | `Alt+↑` / `Alt+↓` | `moveUp` / `moveDown` |
 | `Cmd/Ctrl+Enter` | `toggleChecked` |
-| ` ``` ` / ` ```lang ` + `Enter` | **代码块一律挂到该节点下**（`setText('')` + `setNote(围栏)`，一次 `dispatchAll`）。0.9.0 起顶层空节点不再走 `toCodeBlock`——文档级块没有 bullet，拖不动也缩不进去（见 02） |
-| `/`（词首） | 打开斜杠插入菜单（见下「斜杠插入菜单」）：Code / To-do / 编号 |
+| ` ``` ` / ` ```lang ` + `Enter`（可在围栏前写标题） | 把代码块挂到该节点下（`setText(标题)` + `setNote(围栏)`，一次 `dispatchAll`）；标题为空时仍创建，并把焦点留在始终可见的必填标题行 |
+| `/`（词首） | 打开斜杠插入菜单（见下「斜杠插入菜单」）：Code / 编号 |
 | `Alt+→` / `Alt+←` | zoom in 当前节点 / zoom out 一级 |
 | `Cmd/Ctrl+.` | 折叠/展开当前节点 |
 | `↑` / `↓`（在首/末行） | 光标移到可见前/后节点（列尽量保持） |
@@ -111,7 +112,7 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
   | `Alt+↑` | `moveUp` × n | 文档先序 |
   | `Alt+↓` | `moveDown` × n | **逆序**（否则靠前的一项先跨过靠后的） |
   | `Cmd/Ctrl+Enter` | `setChecked` × n | 全已完成 → 全取消，否则全标完成 |
-  | `Backspace` / `Delete` | `delete` × n | 光标落到选区前一行，无前一行则落到选区后第一行 |
+  | `Backspace` / `Delete` | `delete` × n | 范围含后代时先确认；光标落到选区前一行，无前一行则落到选区后第一行 |
   | `Cmd/Ctrl+C` / `X` | —（cut 追加 `delete` × n） | 见剪贴板 |
 
   一次批量走 `store.dispatchAll(ops)` → **一条 edit 消息** = host 一次 `applyEdit` = **一个 undo 步**（见 04）。no-op 的 op 不入队（如首个兄弟的 `indent`）。
@@ -120,7 +121,7 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 
 ### zoom 根标题的对齐
 
-zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`bullet` 占位但隐藏（`visibility:hidden`）——标题首字落在 `16 + 4(gap) + 2(padding) = 22px`，正好是子节点圆点的左缘（`toggle 14 + gap 4 + ::before left 4`）。两个都 `display:none` 会贴到容器最左，两个都 `visibility:hidden` 又比子节点还靠右，两版都被实机否掉过。
+zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`bullet` 占位但隐藏（`visibility:hidden`）。正文、代码块与图片统一使用 `--node-content-offset`；折叠按钮命中区域至少为 24×24px，视觉图标可以更小但命中区域不能缩。两个占位元素都 `display:none` 会让标题贴到最左，两个都 `visibility:hidden` 又会比子节点靠右。
 
 ## 代码块（codeFence.ts + highlight.ts）
 
@@ -143,9 +144,11 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 - **复制按钮**发 `copyText` 给 host 走 `vscode.env.clipboard`（见 04），不用浏览器剪贴板 API。
 - **头部（语言徽标 + 复制按钮）绝对定位在代码块右上角，不占布局高度**——占一行会把「块排进节点行」的成果顶掉、代码块上方又冒出一条空行（实机反馈两轮）。
 - **语言徽标就是切换语言的入口**：围栏行被渲染层摘掉了，没有这个入口语言就永远改不了。切换时只改 `data-code-open` 里的语言部分，**保留原缩进与围栏字符**（``` / ~~~ 及其长度，字节保真红线），随后走和编辑代码同一条提交路径，不新增 op。因为 `setNote` / `setRawBlock` 是不 emit 的热路径，切换后要**本地立即 `renderFence` 重建这一块**（换语言要加/删高亮层，只改徽标文字不够）。
-- **退出手势要看正文是否为空**：`Esc` / 首行 `↑` 本来一律回「本节点正文」，但代码块节点的正文是空的、零宽——聚焦它只会在代码块旁冒出一条空输入框，像 bug（实机反馈）。正文为空时改去相邻节点（优先上一个）。
-- **行内挂载的代码块放在正文之后**（`syncNoteCode` 用 `append` 而非 `insertBefore`）：正文为空时零宽、看不出差别；一旦正文获得焦点（如从上一个节点按 `↓` 进来），它占住 bullet 右边这一行、代码块折到下一行并缩进 38px 对齐正文列——像个标题栏。反过来（块在前）焦点一来就在块下方冒出空输入框。
+- **标题始终独立显示**：节点正文就是代码块标题，代码块固定挂在 `.node-row` 之后，不再因正文为空而排进行内或隐藏标题。`Esc` / 首行 `↑` 始终回到本节点标题。
+- **旧空标题兼容**：不自动生成标题、不改 Markdown；正文行保持可编辑并显示“标题必填”提示，用户补填后走普通 `setText`。
 - **`Tab` / `Shift+Tab` 在节点代码块里缩进的是「这个节点」**，不是代码文本：代码块节点的正文宽度为 0、点不到，Tab 又是全 app 统一的层级手势，此前 Tab 只把焦点甩走 = 没有缩进入口（实机反馈）。代码内缩进打空格。顶层代码块没有层级，Tab 插两个空格。
+- **高代码块折叠**：渲染高度超过 240px 时默认裁切到 240px，并显示渐隐遮罩与“展开”；展开后提供“收起”，代码 textarea 获得焦点时自动展开。编辑与语言切换后重新测量，变短后移除控制。
+- **展开状态属于 ViewState**：用稳定的 raw block / node key 记录用户主动展开的代码块，热恢复后还原，绝不写入 Markdown。标题不新增字段：节点正文就是标题；空标题创建后立即聚焦必填标题行，不能通过隐藏入口来强制标题。
 
 ## 剪贴板（clipboard.ts）
 
@@ -158,7 +161,7 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 
 `` `代码` ``、`**加粗**`、`==高亮==`、`[文字](url)` / `<url>` / 裸链接。**数据层永远只存原始 Markdown**，这里纯渲染。
 
-- **两态**：未聚焦 → 显示态（记号隐藏、只留效果）；聚焦 → 源码态（还原成单个纯文本节点）。
+- **两态**：未聚焦 → 显示态（记号隐藏、只留效果）；聚焦 → 源码态（还原成单个纯文本节点），并在支持 CSS Custom Highlight API 时用 Range 标出 inline-code、高亮、粗体、链接内容及其语法标记。Highlight 不向 `contenteditable` 插入 span，因此源码 offset 与 selection 不变；不支持该 API 时退回纯源码显示。
   为什么必须回源码态：在「记号被隐藏」的文本上打字，光标偏移与源文本偏移对不上，`setText` 会写错位置。Obsidian 实况编辑同理。副作用是点进去会看到记号，这是刻意的。
 - **换态时机**：`pointerdown`（捕获）、`focusin`（兜底：程序化 `focus()` / Tab / 辅助技术）、`caret.restoreCaret`（放光标前）。失焦后在 macrotask 里渲染回显示态。
 - **点击落点要自己接管**：换态会销毁被点的那个元素，浏览器的命中测试会断在半路（实测点完根本聚焦不上）。所以 `pointerdown` 里先 `offsetFromPoint` 取显示态偏移 → `sourceOffset()` 换算成源码偏移 → 换态 → `preventDefault` → `focusAtOffset`。两套坐标不等长，不换算的话越靠后错得越多。
@@ -166,11 +169,13 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 - **链接用 `<span role="link">` 而不是 `<a href>`**：webview 里本来就不能靠 href 导航（打开走 host 的 `openLink`，见 04），留着 href 只会招来浏览器默认行为——Alt+点击被当成「下载链接」，「按修饰键进去改字」这条路直接失效。
 - **不碰的**：镜像行（`![[#^id]]`，归 06）与 wiki 链接 `[[…]]`（归图片/镜像层）。
 - **渲染用 DOM API 建元素，不用 innerHTML**：文本天然转义。
+- **IME 期间不重算源码高亮**：`compositionstart` 后保持现状，`compositionend` 才按最终文本更新 ranges，避免触碰组合输入与光标。
 
 ## 选区排版（format.ts + formatBar.ts）
 
 - **纯逻辑在 `format.ts`**（`toggleMarker` / `toggleLink`），不碰 DOM，靠单测覆盖；语义是「再按一次取消」——选区两侧紧邻标记、或选区自身就是 `**…**`，都识别为取消。
 - **工具条是主入口**：选中文字浮出 B / 高亮 / 代码 / 链接。按钮的 `mousedown` 必须 `preventDefault`，否则按下的瞬间选区就没了。
+- **链接按钮打开双输入框**：标题默认是选中文字，URL 默认聚焦；选中完整 `[title](url)` 时解析回填。Enter 提交、Esc / 点击外部取消，提交后光标落到完整链接之后。URL 只要求非空单行；真正打开时仍由 host 的 `http` / `https` / `mailto` 白名单兜底。
 - **快捷键只能挑 VS Code 没占的组合**（`formatKeyOf`）：mac `Ctrl+B` / `Ctrl+H`，其他平台 `Ctrl+Alt+B` / `Ctrl+Alt+H`。理由同 `Ctrl+O`：webview 按键会转发给工作台，`preventDefault` 拦不住原生绑定。
 - **选中文字时粘贴 URL → 直接包成 `[选中的字](url)`**。判据 `looksLikeUrl` 刻意**从严**：单个 token，且带 `http(s)`/`mailto` 协议或 `www.` 前缀——宁可漏判走普通粘贴，也不能把普通文字误当链接吞掉选中内容。选区折叠时 `applyFormat(requireSelection)` 返回 false，粘贴照常走浏览器默认插入。选中的整段本身已是链接时，给了新 url 就**换地址**（不是还原成纯文字，那是工具条 `url === ''` 的语义）。
 - **施加走 `store.setNodeText`（打字热路径，不 emit）**：所以要自己把新文本写回 DOM、`sidebar.syncText` 跟上、再用 `selectRange` 重设选区——选中的仍是内容而非标记，可以连点两次叠加 `**==x==**`。
@@ -178,7 +183,7 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 ## 图片（images.ts + lightbox.ts）
 
 - **预览**：正文里的 `![alt](path)` / `![[file.ext]]` 渲染成 `.node-images > img.node-image`，源码仍在可编辑正文里。相对路径按 `data-doc-base`（host 注入）改写成 `vscode-webview://`。
-- **块内容进节点行**（图片 / 代码块共用的规矩）：一个节点的内容如果**只有**这个块（正文为空或只有图片语法），块就挂进 `.node-row` 里；否则挂在行下方。否则块上面会多出一条只有 bullet 的空行（实机反馈两次）。
+- **图片块可进节点行，代码块不可**：图片节点仍可把预览挂进 `.node-row`；节点代码块必须保留独立标题行，因此固定挂在行下方。
 - **图片节点**：正文除图片语法外没有别的内容时（`isImageOnly`），`.node-row` 加 `.image-only`：
   - 预览**挂进节点行内**（`syncImages` 把 `.node-images` 插到 `.text` 之前），图片就是这一行的内容，上方不再多出一条空行；正文有字的节点仍挂在行下方。
   - 未聚焦时 `.text` 透明。刻意**不用 `display:none`**：那样 `restoreCaret` 与点击都聚焦不上，节点会变成改不动的死块。透明的正文仍是图片右侧的点击区，点它即回源码态。
@@ -195,8 +200,8 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 
 **节点代码块**（`.node > .node-code`）：节点的 `note` 整体是围栏块时，`syncNote` 渲染成同一套代码块 UI（`data-field="noteCode"`），编辑经 `setNote` 整块替换。围栏解析/渲染由 `codeFence.ts` 与文档级代码块共用，两条路径只差 textarea 的 `data-field`。这就是「节点下面挂代码块」——见 02，**不需要新 op**。
 
-- 新建时写 `` ```lang\n``` ``（**不留空正文行**：那会被序列化成一行缩进空白）。
-- **正文为空的「代码块节点」**：`.node-row` 加 `.code-only`，代码块挂进行内（`syncNoteCode` 插到 `.text` 之前），块上方不再留空 bullet 行；正文有字时仍挂在行下方。空正文缩成零宽点击区，聚焦时靠 `flex-wrap` 折到块下方单独成行。
+- 新建时 note 写 `` ```lang\n``` ``（**不留空代码正文行**：那会被序列化成一行缩进空白）；节点正文作为必填标题，缺失时聚焦其提示行。
+- **标题布局**：`.node-row` 始终保留标题，`.node-code` 固定插在标题行与 children 之间；旧空标题节点加 `.code-title-missing`，只显示 UI placeholder，不持久化提示文字。
 - 代码正文里的空行没问题，parser 侧已支持（见 03「note 续行」的围栏例外）。
 - `note` 被删掉时 `syncNote` 无条件摘除代码块 DOM——此刻焦点还在该 textarea 里，照搬「正在编辑就不动」的守卫会让它赖着不走。
 
@@ -215,19 +220,18 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 
 条目复用现有 op、不改数据模型：
 
-- **Code block**：两条路径。去掉 `/token` 后为空的**顶层无子节点** → `toCodeBlock`（文档级，文件里没有 bullet，`/code` 文本随节点一并消失）；**其余节点** → `setText(去掉 token)` + `setNote(围栏)` 挂到该节点下。`enabled` 只排除「已有备注」与镜像节点（note 只有一份，代码块会顶掉原备注）。
-- **To-do**：先 `setText` 删掉 `/query`，再 `setChecked{checked:false}`（未勾选任务）。用 `setChecked` 而非 `toggleChecked`，因为后者从 `null` 只能到 `true`（见 04）。
+- **Code block**：只要节点没有既有备注且不是镜像，入口始终可选；执行 `setText(标题)` + `setNote(围栏)`，代码块挂在标题行下方。空标题也先创建，再聚焦“请先填写节点标题”行；已有备注与镜像节点禁用。
 - **Numbered**：先 `setText` 删掉 `/query`，再 `toggleOrdered`（已是有序则跳过）。
 
-无匹配时只显示占位、不拦截 Enter。所有条目文案走 `t()` 双语（见 i18n.ts `slash.*`）。
+菜单只保留 Code 与 Numbered；删除的是 To-do 创建入口，不删除 `setChecked`、已有任务解析或完成状态操作。无匹配时只显示占位、不拦截 Enter。所有条目文案走 `t()` 双语（见 i18n.ts `slash.*`）。
 
 ## 拖拽（dnd.ts）
 
 用 **pointer events** 自实现（不用 HTML5 DnD：ghost 图像与 drop 目标控制太差）：
 
-- 按下 `.bullet` + 移动超过 4px 阈值 → 进入拖拽；被拖子树加半透明样式。
+- 按下 `.bullet` 即 `preventDefault` 并临时设置 `user-select:none`，移动超过 4px 阈值后捕获 pointer、进入拖拽；被拖子树加半透明样式。这样长按和拖过正文不会产生原生文本选区，普通点击仍可 zoom。
 - 移动中计算插入间隙（相邻两行之间），显示 drop 指示线；**指针水平偏移决定目标深度**——在该间隙的合法深度区间内（上行深度+1 ~ 下行深度）按缩进宽度换算。
-- 松开 → 单条 `move{id, parentId, index}`；Esc 取消。
+- 松开 → 单条 `move{id, parentId, index}`；Esc 取消。结束、取消与异常清理都必须释放 pointer capture、拖拽 class 与 `user-select` 锁。
 - 容器边缘 40px 内自动滚动。
 - v1 限制：同一 ListBlock 内拖拽（跨 block 禁止落点）。
 
@@ -248,12 +252,13 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 
 ## 热恢复（main.ts）
 
-`vscode.setState` 持久化 `{ zoomRootKey, scrollTop, hideCompleted, sidebarCollapsed, sidebarSections }`（zoom 存 nodeKey 而非 id）。webview revival → `ready` → 收到 `init` → 按 state 恢复 zoom/滚动/隐藏已完成/侧栏。全是 UI 态，只进 `setState`，绝不写 `.md`（红线 3）。
+`vscode.setState` 持久化 `{ zoomRootKey, scrollTop, hideCompleted, sidebarCollapsed, sidebarSections, expandedCodeKeys }`（zoom 存 nodeKey 而非 id）。webview revival → `ready` → 收到 `init` → 按 state 恢复 zoom/滚动/隐藏已完成/侧栏/高代码块展开状态。全是 UI 态，只进 `setState`，绝不写 `.md`（红线 3）。
 
 ## 侧栏（sidebar.ts）
 
 - 结构：`Starred`（有书签时才出现）→ `Home` + 其下的可展开大纲树。**`Home` 就是大纲区的标题行**：三角折叠整区、文字点击回全文档、zoom 在根时自身高亮——刻意不再单列一行 Home 再加一个 Outline 小标题（实机反馈：同一含义占两行）。分区标题都是折叠开关（`aria-expanded`），折叠键 `'starred'` / `'outline'` 随 `ViewState.sidebarSections` 持久化——收起 Starred 即可消掉「同一节点在两区各列一次」的重复观感。
 - 同一节点同时出现在 Starred 与 Home 树时，当前位置高亮只落在实际点击进入的那一份；从正文 bullet、面包屑、前进后退或热恢复进入时，默认高亮 Home 树中的规范位置，禁止两个副本同时 `.active`。
+- 点击侧栏节点进入 zoom 后，把焦点与光标送到右侧 zoom 根正文末尾，使 `Shift+↓` 可以立即进入子树多选；这一焦点迁移不得改动来源分区高亮或折叠状态。
 - 缩进基准 `INDENT_BASE_PX = 17`（sidebar.ts）必须与 `.sidebar-item` 的 `padding-left: calc(17px + depth * 13px)` 一致：拖拽落点深度就是用横向像素反算的，改一处必须改另一处（测试 `dragSidebar` 里也有一份）。
 - 侧栏树的展开状态独立于主编辑区折叠，只存 webview 内存；渲染项封顶 `MAX_ITEMS`，护住 refresh patch 的性能红线（见 07）。
 - 观感约定：`Starred` 与 `Home` 是并列的一级入口，**必须同字号、同字重、同行高、同三角位**（两者排版不一致会立刻显得「样式不对」，实机否掉过一版）；当前位置用「淡底 + 左侧 2px 竖条 + 字重」，不用通栏 `list-activeSelectionBackground` 色块；星标/三角默认低透明度，hover 才提亮；层级除缩进外每级再降 12% 不透明度（最多两级）。颜色一律走 `--vscode-*`（见本文档开头的主题约定）。

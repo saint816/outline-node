@@ -34,6 +34,16 @@ test('聚焦即回源码态：看到完整 Markdown，且是单个纯文本节�
     text: el.firstChild?.nodeType === Node.TEXT_NODE,
   }));
   expect(kind).toEqual({ children: 0, text: true });
+  const highlights = await page.evaluate(() => {
+    const registry = (CSS as unknown as { highlights?: { has(name: string): boolean } }).highlights;
+    return {
+      code: registry?.has('outline-md-code') ?? false,
+      bold: registry?.has('outline-md-bold') ?? false,
+      mark: registry?.has('outline-md-mark') ?? false,
+      link: registry?.has('outline-md-link') ?? false,
+    };
+  });
+  expect(highlights).toEqual({ code: true, bold: true, mark: true, link: true });
 });
 
 test('在源码态编辑后失焦，重新渲染成显示态', async ({ page }) => {

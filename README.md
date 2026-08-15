@@ -19,8 +19,8 @@ Your notes are just a standard `.md` indented list — Obsidian and Logseq read 
 - **Node notes** — `Shift+Enter` opens a second line, stored as an indented continuation
 - **Move and drag** — `Alt+↑/↓` moves a whole subtree; drag with the mouse to reorder across levels
 - **Live search filter** — keeps the ancestor chain, sees through folded nodes
-- **Inline Markdown** — `` `code` ``, `**bold**`, `==highlight==` and links render as you read; click in and you get the raw Markdown back. Paste a URL over selected text to turn it into a link
-- **Code blocks** — syntax highlighting for 12 languages, switchable per block, with a copy button
+- **Inline Markdown** — `` `code` ``, `**bold**`, `==highlight==` and links render as you read; editing keeps lightweight syntax highlighting without changing the plain-text DOM. The link toolbar opens title and URL fields
+- **Code blocks** — syntax highlighting for 12 languages, switchable per block, with a copy button; blocks taller than 240px collapse automatically
 - **Images** — `![[pic.png]]` and `![](path)` render inline; paste a screenshot and it lands in the note's `assets/` folder
 - **Sidebar** — top-level navigation and starred nodes, collapsible
 - **Multi-select** — shift-click or `Shift+↑/↓` to act on several nodes at once
@@ -35,7 +35,8 @@ Your notes are just a standard `.md` indented list — Obsidian and Logseq read 
 | `Enter` | Split the node at the caret (at the end of an expanded parent: create its first child) |
 | `Shift+Enter` | Focus / create the node note; insert a newline inside a note |
 | `Tab` / `Shift+Tab` | Indent / outdent |
-| `Backspace` (at line start) | Merge with the previous node |
+| `Backspace` (at line start) | Merge with the previous node; an empty parent promotes its children and is removed |
+| `Cmd/Ctrl+Shift+Backspace` | Delete the current node or selection (asks before deleting descendants) |
 | `Alt+↑` / `Alt+↓` | Move the node up / down, children included |
 | `Cmd/Ctrl+Enter` | Toggle done |
 | `Alt+→` / `Alt+←` | Zoom into the current node / zoom out one level |
@@ -52,6 +53,8 @@ Your notes are just a standard `.md` indented list — Obsidian and Logseq read 
 Use `Cmd` on macOS, `Ctrl` on Windows and Linux.
 
 The formatting and hide-completed keys deliberately avoid `Cmd+B` / `Cmd+O`: webview keystrokes are handed to the workbench for keybinding resolution, so VS Code's own bindings (toggle sidebar, open file) win no matter what the webview does. The floating toolbar that appears over selected text is the primary entry point for formatting.
+
+A node code block requires a title, but its creation entry is always available: type `/code`, or type a fence on an empty line and press Enter. If the title is still empty, focus stays on the always-visible “title required” row above the new block. You can also type `Parse YAML /code` directly. Existing untitled blocks show the same editable prompt without silently changing the Markdown. The `/` menu contains Code and Numbered List; existing task nodes remain fully supported.
 
 ## Usage
 

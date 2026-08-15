@@ -29,12 +29,16 @@ import { Toolbar } from './toolbar.js';
 import { HelpOverlay } from './help.js';
 import { closeLightbox, handleImageClick, isLightboxOpen, onLightboxClosed } from './lightbox.js';
 import { hasInlineMarkup, isRendered, renderInline, sourceOffset, toSourceMode } from './inline.js';
-import { toggleLink, toggleMarker, type Marker } from './format.js';
+import { parseLink, setLink, toggleLink, toggleMarker, type Marker } from './format.js';
 import { FormatBar } from './formatBar.js';
 import { isMac } from './platform.js';
 import { SlashMenu } from './slashMenu.js';
 import { NodeSelection, handleSelectionKeydown } from './selection.js';
 import { ZoomHistory } from './zoomHistory.js';
+import { confirmSubtreeDelete } from './confirmDialog.js';
+import { CodeCollapseController } from './codeCollapse.js';
+import { SourceHighlighter } from './sourceHighlight.js';
+import { LinkPopover, type LinkPopoverValue } from './linkPopover.js';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
@@ -50,6 +54,8 @@ interface ViewState {
   sidebarCollapsed: boolean;
   /** 被折叠的侧栏分区键（'starred' / 'outline'）。 */
   sidebarSections: string[];
+  /** 用户显式展开过的高代码块（纯 UI 状态）。 */
+  expandedCodeKeys: string[];
 }
 
 const vscode = acquireVsCodeApi();
@@ -58,6 +64,9 @@ const root = document.getElementById('outline-root') as HTMLElement;
 const send = (msg: W2H): void => vscode.postMessage(msg);
 const store = new Store(send);
 const renderer = new Renderer(root);
+const codeCollapse = new CodeCollapseController(root, () => saveViewState());
+const sourceHighlighter = new SourceHighlighter();
+const linkPopover = new LinkPopover();
 // 节点多选（Shift+↑↓ / Shift+点击）：纯 UI 状态，批量 op 复用既有 op（见 selection.ts）
 const selection = new NodeSelection(store, root);
 
@@ -73,6 +82,20 @@ function navigate(id: string | null, section: SidebarNavSection = 'outline'): vo
   if (sectionChanged && store.zoomRoot === id) scheduleChrome();
 }
 
+/** 侧栏导航除了 zoom，还把键盘入口交回正文；否则 Shift+↓ 仍落在侧栏按钮上。 */
+function navigateFromSidebar(id: string | null, section: SidebarNavSection): void {
+  if (id !== null) {
+    const node = store.findNode(id);
+    if (node) nextCaret = { nodeId: id, field: 'text', offset: node.text.length };
+  }
+  navigate(id, section);
+  // 同一 zoom id 的 Starred/Home 切换不会触发 render，需直接恢复焦点。
+  if (id !== null && store.zoomRoot === id) {
+    const node = store.findNode(id);
+    if (node) requestAnimationFrame(() => focusAtOffsetForNode(id, node.text.length));
+  }
+}
+
 let sidebarCollapsed = false;
 let sidebarSections: string[] = [];
 
@@ -80,7 +103,7 @@ const breadcrumb = new Breadcrumb((id) => navigate(id));
 const search = new SearchBox((query) => store.setSearchQuery(query));
 const help = new HelpOverlay();
 const sidebar = new SidebarView({
-  onNavigate: (id, section) => navigate(id, section),
+  onNavigate: (id, section) => navigateFromSidebar(id, section),
   onToggleStar: (id) => store.toggleStar(id),
   onToggleCollapse: () => {
     sidebarCollapsed = !sidebarCollapsed;
@@ -135,7 +158,7 @@ let nextNoteCodeFocus: string | null = null;
 let ready = false;
 const EMPTY_FOLDS: ReadonlySet<string> = new Set<string>();
 
-// 斜杠插入菜单（/ → Code/To-do/编号）。keydown 前置拦导航键、input 后重算 token。
+// 斜杠插入菜单（/ → Code/编号）。keydown 前置拦导航键、input 后重算 token。
 const slashMenu = new SlashMenu({
   store,
   newId: () => nanoid(),
@@ -333,6 +356,7 @@ root.addEventListener('input', (event) => {
     return;
   }
   commitFieldText(target);
+  sourceHighlighter.sync(target);
   slashMenu.sync(); // 文本已提交，重算 / token（sync 内部对非 text 字段自动关闭）
 });
 
@@ -356,6 +380,7 @@ function commitCodeBlock(target: HTMLElement): void {
   if (!block || !blockId) return;
   autoGrow(target);
   syncHighlight(block, target.value);
+  codeCollapse.syncArea(target);
   store.setRawBlockLines(blockId, fenceLinesFrom(block, target.value));
 }
 
@@ -367,6 +392,7 @@ function commitNoteCode(target: HTMLElement): void {
   if (!block || !id) return;
   autoGrow(target);
   syncHighlight(block, target.value);
+  codeCollapse.syncArea(target);
   store.setNodeNote(id, fenceLinesFrom(block, target.value).join('\n'));
 }
 
@@ -374,6 +400,10 @@ function commitNoteCode(target: HTMLElement): void {
 function autoGrow(area: HTMLTextAreaElement): void {
   area.style.height = 'auto';
   area.style.height = `${area.scrollHeight}px`;
+}
+
+function cssEscape(value: string): string {
+  return value.replace(/["\\]/g, '\\$&');
 }
 
 // undo 三道闸之一：封死浏览器原生 undo 栈的一切入口（含右键菜单）
@@ -417,7 +447,7 @@ root.addEventListener('keydown', (event) => {
   // 斜杠菜单激活时优先吃掉导航键（↑↓/Enter/Tab/Esc），keymap 不再处理
   if (event.key !== 'Process' && !event.isComposing && slashMenu.handleKeydown(event)) return;
   // 多选：Shift+↑↓ 进入/扩选；选中态下 Tab/Alt+↑↓/Cmd+Enter/Backspace 批量生效
-  if (handleSelectionKeydown(event, { selection, setNextCaret })) return;
+  if (handleSelectionKeydown(event, { selection, deleteSelection: requestDeleteSelection })) return;
   handleKeydown(event, {
     store,
     setNextCaret,
@@ -431,8 +461,77 @@ root.addEventListener('keydown', (event) => {
       nextCodeFocus = blockId;
     },
     focusNoteCode,
+    requestDeleteNode: (id) => requestDelete([originalIdOf(id)]),
   });
 });
+
+function focusAtOffsetForNode(id: string, offset: number): void {
+  const editable = root.querySelector<HTMLElement>(
+    `.node[data-id="${cssEscape(id)}"] > .node-row > [data-field="text"]`,
+  );
+  if (editable) focusAtOffset(editable, offset);
+}
+
+function requestDeleteSelection(): void {
+  const ids = selection.roots();
+  if (ids.length === 0) return selection.clear();
+  void requestDelete(ids, () => selection.clear());
+}
+
+/** 显式删除的统一入口：叶节点直删，包含后代时先确认。 */
+async function requestDelete(
+  rawIds: readonly string[],
+  afterDelete?: () => void,
+  caretAtEnd = false,
+): Promise<void> {
+  const ids = [...new Set(rawIds.map(originalIdOf))].filter((id) => store.findNode(id) !== null);
+  if (ids.length === 0) return;
+  const descendantCount = ids.reduce((sum, id) => sum + countDescendants(store.findNode(id)!), 0);
+  if (descendantCount > 0 && !(await confirmSubtreeDelete(ids.length, descendantCount))) return;
+
+  const caretTarget = caretTargetAfterDelete(ids);
+  if (caretTarget !== null) {
+    const offset = caretAtEnd ? (store.findNode(caretTarget)?.text.length ?? 0) : 0;
+    nextCaret = { nodeId: caretTarget, field: 'text', offset };
+  }
+  if (store.zoomRoot !== null && deletedIds(ids).has(store.zoomRoot)) store.zoomTo(null);
+  store.dispatchAll(ids.map((id) => ({ op: 'delete' as const, id })));
+  afterDelete?.();
+}
+
+function countDescendants(node: { children: { children: unknown[] }[] }): number {
+  let count = 0;
+  const walk = (children: readonly { children: unknown[] }[]): void => {
+    for (const child of children) {
+      count++;
+      walk(child.children as { children: unknown[] }[]);
+    }
+  };
+  walk(node.children);
+  return count;
+}
+
+function deletedIds(roots: readonly string[]): Set<string> {
+  const out = new Set<string>();
+  const walk = (node: { id: string; children: unknown[] }): void => {
+    out.add(node.id);
+    for (const child of node.children) walk(child as { id: string; children: unknown[] });
+  };
+  for (const id of roots) {
+    const node = store.findNode(id);
+    if (node) walk(node);
+  }
+  return out;
+}
+
+function caretTargetAfterDelete(roots: readonly string[]): string | null {
+  const rows = store.visibleRows();
+  const covered = deletedIds(roots);
+  const first = rows.findIndex((row) => covered.has(row.node.id));
+  if (first === -1) return null;
+  if (first > 0) return rows[first - 1].node.id;
+  return rows.slice(first).find((row) => !covered.has(row.node.id))?.node.id ?? null;
+}
 
 /**
  * 代码块 textarea 的出口手势（代码块只能顶层、是文档级 RawBlock，容易变成死胡同）：
@@ -549,21 +648,11 @@ function handleNoteCodeKeydown(e: KeyboardEvent, area: HTMLTextAreaElement): boo
 }
 
 /**
- * 退出节点代码块：正文有字就回正文；正文为空（= 这个节点就是一个代码块）则去相邻节点——
- * 空正文是零宽的，聚焦它只会在代码块旁边冒出一条空输入框，看着像 bug（实机反馈）。
+ * 退出节点代码块时始终回到标题正文；旧文档中的空标题也保留可编辑必填行。
  */
 function leaveNoteCode(id: string, dir: -1 | 1): void {
-  const node = store.findNode(id);
-  if (node && node.text !== '') return focusNodeText(id);
-  const rows = store.visibleRows();
-  const index = rows.findIndex((row) => row.node.id === id);
-  const neighbor =
-    index < 0
-      ? null
-      : dir === -1
-        ? (rows[index - 1]?.node.id ?? rows[index + 1]?.node.id ?? null)
-        : (rows[index + 1]?.node.id ?? rows[index - 1]?.node.id ?? null);
-  focusNodeText(neighbor ?? id);
+  void dir;
+  focusNodeText(id);
 }
 
 /** textarea 光标是否在首行 / 末行（跨节点移动的判据，和正文的 ↑↓ 同一套直觉）。 */
@@ -594,11 +683,9 @@ function focusNodeText(nodeId: string, offset?: number): void {
 }
 
 function noteCodeAreaOf(nodeId: string): HTMLTextAreaElement | null {
-  // 代码块可能挂在行内（正文为空的代码块节点）或行下方（正文有字），两处都要找
   const id = nodeId.replace(/["\\]/g, '\\$&');
   return root.querySelector<HTMLTextAreaElement>(
-    `.node[data-id="${id}"] > .node-code textarea.code-input,` +
-      `.node[data-id="${id}"] > .node-row > .node-code textarea.code-input`,
+    `.node[data-id="${id}"] > .node-code textarea.code-input`,
   );
 }
 
@@ -682,6 +769,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 // 普通按下 → 退出多选（包括点侧栏 / 工具条，否则焦点走了高亮还留着）。
 document.addEventListener('mousedown', (event) => {
   const target = event.target instanceof HTMLElement ? event.target : null;
+  if (target?.closest('.confirm-overlay')) return; // 确认框内部操作不应清掉待删除的节点选区
   const id = target?.closest<HTMLElement>('.node')?.dataset.id;
   if (event.shiftKey && id !== undefined && root.contains(target)) {
     const anchor = selection.anchor ?? saveCaret()?.nodeId ?? null;
@@ -731,8 +819,58 @@ root.addEventListener(
 
 const formatBar = new FormatBar({
   onMarker: (marker) => applyFormat((text, start, end) => toggleMarker(text, start, end, marker)),
-  onLink: () => applyFormat((text, start, end) => toggleLink(text, start, end)),
+  onLink: () => openLinkEditor(),
 });
+
+function openLinkEditor(): void {
+  const el = activeEditable();
+  const id = el?.closest<HTMLElement>('.node')?.dataset.id;
+  const range = el && selectionRange(el);
+  if (!el || !id || !range || range.start === range.end) return;
+  const source = el.textContent ?? '';
+  const selected = source.slice(range.start, range.end);
+  const parsed = parseLink(selected);
+  const snapshot = { id: originalIdOf(id), start: range.start, end: range.end };
+  const restore = (): void => restoreLinkSelection(snapshot);
+  linkPopover.open(
+    formatBar.el.getBoundingClientRect(),
+    parsed ?? { title: selected, url: '' },
+    (value) => applyLinkValue(snapshot, value),
+    restore,
+  );
+}
+
+function applyLinkValue(
+  snapshot: { id: string; start: number; end: number },
+  value: LinkPopoverValue,
+): void {
+  const node = store.findNode(snapshot.id);
+  const el = textEditableOf(snapshot.id);
+  if (!node || !el) return;
+  if (isRendered(el)) toSourceMode(el);
+  const next = setLink(node.text, snapshot.start, snapshot.end, value);
+  el.textContent = next.text;
+  store.setNodeText(snapshot.id, next.text);
+  sidebar.syncText(snapshot.id, next.text);
+  focusAtOffset(el, next.end);
+  formatBar.hide();
+  sourceHighlighter.sync(el);
+}
+
+function restoreLinkSelection(snapshot: { id: string; start: number; end: number }): void {
+  const el = textEditableOf(snapshot.id);
+  if (!el) return;
+  if (isRendered(el)) toSourceMode(el);
+  el.focus();
+  selectRange(el, snapshot.start, snapshot.end);
+  sourceHighlighter.sync(el);
+}
+
+function textEditableOf(id: string): HTMLElement | null {
+  return root.querySelector<HTMLElement>(
+    `.node[data-id="${cssEscape(id)}"] > .node-row > [data-field="text"]`,
+  );
+}
 
 /**
  * 对当前聚焦正文的选区施加排版。走 store.setNodeText（同打字的热路径：DOM 领先、
@@ -822,7 +960,10 @@ root.addEventListener(
   'focusin',
   (event) => {
     const el = event.target;
-    if (el instanceof HTMLElement && el.dataset.field === 'text' && isRendered(el)) toSourceMode(el);
+    if (el instanceof HTMLElement && el.dataset.field === 'text') {
+      if (isRendered(el)) toSourceMode(el);
+      sourceHighlighter.sync(el);
+    }
   },
   true,
 );
@@ -833,6 +974,7 @@ root.addEventListener(
   (event) => {
     const el = event.target;
     if (!(el instanceof HTMLElement) || el.dataset.field !== 'text') return;
+    sourceHighlighter.clear(el);
     const id = el.closest<HTMLElement>('.node')?.dataset.id;
     if (!id) return;
     // 推到 macrotask：此刻焦点转移还没完成，立刻改 DOM 会打断它（同 scheduleChrome）
@@ -962,6 +1104,7 @@ function setFenceLang(block: HTMLElement, lang: string): void {
   const next = block.querySelector<HTMLTextAreaElement>('textarea.code-input');
   if (!next) return;
   autoGrow(next);
+  codeCollapse.syncArea(next);
   next.focus();
   if (isNodeCode) commitNoteCode(next);
   else commitCodeBlock(next);
@@ -1043,10 +1186,14 @@ installClipboard(root, {
   setNextCaret,
   saveImage: (name, dataBase64) => send({ type: 'saveImage', name, dataBase64 }),
   linkSelection: (url) => applyFormat((text, start, end) => toggleLink(text, start, end, url), true),
+  deleteNodes: (ids, caretAtEnd) => void requestDelete(ids, () => selection.clear(), caretAtEnd),
 });
 
 installImeGuard(root, {
-  onCommit: (target) => commitFieldText(target),
+  onCommit: (target) => {
+    commitFieldText(target);
+    sourceHighlighter.sync(target);
+  },
   onFlushPendingRefresh: (msg) => {
     if (msg.type === 'refresh') applyRefresh(msg);
   },
@@ -1064,6 +1211,7 @@ function saveViewState(): void {
     hideCompleted: store.hideCompleted,
     sidebarCollapsed,
     sidebarSections,
+    expandedCodeKeys: codeCollapse.state(),
   };
   vscode.setState(state);
 }
@@ -1076,6 +1224,9 @@ function restoreViewState(): void {
   if (Array.isArray(state.sidebarSections)) {
     sidebarSections = state.sidebarSections.filter((k): k is string => typeof k === 'string');
     sidebar.restoreSections(sidebarSections);
+  }
+  if (Array.isArray(state.expandedCodeKeys)) {
+    codeCollapse.restore(state.expandedCodeKeys.filter((key): key is string => typeof key === 'string'));
   }
   if (typeof state.zoomRootKey === 'string') {
     const id = store.idForKey(state.zoomRootKey);

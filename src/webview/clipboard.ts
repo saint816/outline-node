@@ -19,6 +19,8 @@ export interface ClipboardContext {
   saveImage(name: string, dataBase64: string): void;
   /** 把当前正文选区包成 [选中的字](url)；没有选区就返回 false，让粘贴照常走。 */
   linkSelection(url: string): boolean;
+  /** 剪切节点时复用统一的子树确认入口。 */
+  deleteNodes(ids: readonly string[], caretAtEnd?: boolean): void;
 }
 
 export function installClipboard(root: HTMLElement, ctx: ClipboardContext): void {
@@ -180,7 +182,7 @@ function onCopy(event: ClipboardEvent, ctx: ClipboardContext, cut: boolean): voi
   if (selected.length > 0) {
     event.preventDefault();
     event.clipboardData?.setData('text/plain', nodesToMarkdown(ctx, selected));
-    if (cut) ctx.selection.deleteSelected(ctx.setNextCaret);
+    if (cut) ctx.deleteNodes(ctx.selection.roots());
     return;
   }
 
@@ -197,9 +199,7 @@ function onCopy(event: ClipboardEvent, ctx: ClipboardContext, cut: boolean): voi
   event.clipboardData?.setData('text/plain', subtreeToMarkdown(ctx, node));
 
   if (!cut) return;
-  const previous = ctx.store.previousNode(node.id);
-  if (previous) ctx.setNextCaret({ nodeId: previous.id, field: 'text', offset: previous.text.length });
-  ctx.store.dispatch({ op: 'delete', id: node.id });
+  ctx.deleteNodes([node.id], true);
 }
 
 /** 光标所在节点的整棵子树 → markdown 列表（与文件里的写法一致）。 */
