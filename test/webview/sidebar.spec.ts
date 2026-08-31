@@ -276,8 +276,10 @@ test('分区三角与节点三角字体一致', async ({ page }) => {
     page.locator(sel).first().evaluate((el) => getComputedStyle(el).opacity);
   await page.locator('.sidebar-section').first().hover();
   await expect.poll(opacity('.sidebar-section-caret')).toBe('1');
-  await page.locator('.sidebar-item[data-id="a"]').hover();
-  await expect.poll(opacity('.sidebar-item[data-id="a"] .sidebar-toggle')).toBe('1');
+  await page.locator('.sidebar-item[data-nav-section="outline"][data-id="a"]').hover();
+  await expect.poll(opacity('.sidebar-item[data-nav-section="outline"][data-id="a"] .sidebar-toggle')).toBe(
+    '1',
+  );
 });
 
 test('Ctrl+O 隐藏已完成节点（连整棵子树），再按恢复', async ({ page }) => {
@@ -417,4 +419,23 @@ test('非 mac 平台：隐藏已完成走 Ctrl+Alt+O，裸 Ctrl+O 不触发', as
 
   await page.keyboard.press('Control+Alt+o');
   await expect(page.locator('.node[data-id="a"]')).toBeHidden();
+});
+
+test('星标节点可展开/折叠其子节点（星标区非扁平）', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha', [node('a1', 'A1'), node('a2', 'A2')])]);
+  await page.locator('.sidebar-item[data-id="a"] .sidebar-star').click();
+  await expect(page.locator('.sidebar-section', { hasText: 'Starred' })).toBeVisible();
+
+  const starred = page.locator('.sidebar-item[data-nav-section="starred"]');
+  // 默认收起：星标区只列 Alpha 本身
+  await expect(starred.locator('.sidebar-label')).toHaveText(['Alpha']);
+
+  // 展开 → 子节点出现（缩进挂在 Alpha 下）。用 button.sidebar-toggle 区分真实开关与叶节点 spacer
+  const starredToggle = starred.locator('button.sidebar-toggle');
+  await starredToggle.click();
+  await expect(starred.locator('.sidebar-label')).toHaveText(['Alpha', 'A1', 'A2']);
+
+  // 收起
+  await starredToggle.click();
+  await expect(starred.locator('.sidebar-label')).toHaveText(['Alpha']);
 });

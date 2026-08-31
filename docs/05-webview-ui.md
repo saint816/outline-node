@@ -256,7 +256,7 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 
 ## 侧栏（sidebar.ts）
 
-- 结构：`Starred`（有书签时才出现）→ `Home` + 其下的可展开大纲树。**`Home` 就是大纲区的标题行**：三角折叠整区、文字点击回全文档、zoom 在根时自身高亮——刻意不再单列一行 Home 再加一个 Outline 小标题（实机反馈：同一含义占两行）。分区标题都是折叠开关（`aria-expanded`），折叠键 `'starred'` / `'outline'` 随 `ViewState.sidebarSections` 持久化——收起 Starred 即可消掉「同一节点在两区各列一次」的重复观感。
+- 结构：`Starred`（有书签时才出现）→ `Home` + 其下的可展开大纲树。**`Home` 就是大纲区的标题行**：三角折叠整区、文字点击回全文档、zoom 在根时自身高亮——刻意不再单列一行 Home 再加一个 Outline 小标题（实机反馈：同一含义占两行）。星标书签同样可展开成子树（查看结构），但**不可拖拽**、也不作为拖拽落点。分区标题都是折叠开关（`aria-expanded`），折叠键 `'starred'` / `'outline'` 随 `ViewState.sidebarSections` 持久化——收起 Starred 即可消掉「同一节点在两区各列一次」的重复观感。
 - 同一节点同时出现在 Starred 与 Home 树时，当前位置高亮只落在实际点击进入的那一份；从正文 bullet、面包屑、前进后退或热恢复进入时，默认高亮 Home 树中的规范位置，禁止两个副本同时 `.active`。
 - 点击侧栏节点进入 zoom 后，把焦点与光标送到右侧 zoom 根正文末尾，使 `Shift+↓` 可以立即进入子树多选；这一焦点迁移不得改动来源分区高亮或折叠状态。
 - 缩进基准 `INDENT_BASE_PX = 17`（sidebar.ts）必须与 `.sidebar-item` 的 `padding-left: calc(17px + depth * 13px)` 一致：拖拽落点深度就是用横向像素反算的，改一处必须改另一处（测试 `dragSidebar` 里也有一份）。

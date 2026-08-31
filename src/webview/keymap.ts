@@ -192,9 +192,13 @@ function onEnter(caret: CaretPos, ctx: KeymapContext): void {
     }
   }
 
-  // 展开且有子节点、光标在行尾 → 新建第一个子节点
+  // 光标在行尾 → 新建第一个子节点：
+  // - zoom 根（标题）行尾：无论是否已有子节点 / 折叠态，都在其下新建子节点（zoom 下标题即父）；
+  // - 普通节点：仅当展开且有子节点时（否则行尾是拆分，见 docs/05）。
+  const isZoomRoot = ctx.store.zoomRoot === node.id;
+  const atEnd = caret.offset >= node.text.length;
   const expanded = !ctx.store.isFolded(node.id);
-  if (expanded && node.children.length > 0 && caret.offset >= node.text.length) {
+  if (atEnd && (isZoomRoot || (expanded && node.children.length > 0))) {
     const id = ctx.newId();
     ctx.setNextCaret({ nodeId: id, field: 'text', offset: 0 });
     ctx.store.dispatch({

@@ -275,3 +275,33 @@ test('外部 refresh 后折叠与 zoom 仍存活（id 被 treeMatch 复用）', 
   await expect(page.locator('.node[data-id="c"]')).toHaveCount(1);
   expect(await textsInDom(page)).toEqual(['A', 'A1', 'B', 'C']); // B 仍折叠
 });
+
+test('点击 bullet 聚焦节点后按 Enter → 在 zoom 根下新建子节点（而非同级兄弟）', async ({ page }) => {
+  await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta')]);
+  await clearPosted(page);
+
+  // 阅读中正文持有焦点，点 bullet 进入 zoom（焦点应保在正文）
+  await focusText(page, 'a', 5);
+  await page.locator('.node[data-id="a"] > .node-row > .bullet').click();
+  await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Alpha']);
+
+  await page.keyboard.press('Enter');
+  const edit = await waitForEdit(page);
+  const op = (edit.ops as Record<string, unknown>[])[0];
+  expect(op).toMatchObject({ op: 'insertSubtree', parentId: 'a', index: 0 });
+});
+
+test('点击 bullet 进入 zoom（正文此前无焦点）后按 Enter → 仍在 zoom 根下新建子节点', async ({
+  page,
+}) => {
+  await openOutline(page, [node('a', 'Alpha'), node('b', 'Beta')]);
+  await clearPosted(page);
+
+  await page.locator('.node[data-id="a"] > .node-row > .bullet').click();
+  await expect(page.locator('.breadcrumb .crumb')).toHaveText(['Home', 'Alpha']);
+
+  await page.keyboard.press('Enter');
+  const edit = await waitForEdit(page);
+  const op = (edit.ops as Record<string, unknown>[])[0];
+  expect(op).toMatchObject({ op: 'insertSubtree', parentId: 'a', index: 0 });
+});

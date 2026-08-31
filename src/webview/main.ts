@@ -799,6 +799,16 @@ root.addEventListener('click', (event) => {
     store.toggleFold(id);
   } else if (target.closest('.bullet')) {
     event.preventDefault();
+    // 点圆点 = zoom 进该节点：把光标放到 zoom 根标题行尾，使 Enter 能立即在其下新建子节点。
+    const node = store.findNode(id);
+    if (node) {
+      nextCaret = { nodeId: node.id, field: 'text', offset: node.text.length };
+      if (store.zoomRoot === node.id) {
+        // 已是 zoom 根（标题圆点在 zoom 下隐藏，通常走不到）：zoomTo 不 emit，直接落焦点。
+        nextCaret = null;
+        requestAnimationFrame(() => focusAtOffsetForNode(node.id, node.text.length));
+      }
+    }
     navigate(id);
   }
 });

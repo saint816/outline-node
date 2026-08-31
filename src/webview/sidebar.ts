@@ -133,14 +133,8 @@ export class SidebarView {
     if (model.starred.length > 0) {
       const open = !this.collapsedSections.has('starred');
       parts.push(this.section(t('sidebar.starred'), 'starred', open));
-      // 星标区扁平（书签就是导航目标，不展开、不作为拖拽源/落点）
-      if (open) {
-        for (const node of model.starred) {
-          if (counter.n >= MAX_ITEMS) break;
-          counter.n++;
-          parts.push(this.item(node, 0, false));
-        }
-      }
+      // 星标区可展开成子树（书签可看结构，但不作为拖拽源/落点）
+      if (open) this.renderStarred(model.starred, parts, 0, counter);
     }
 
     // 大纲区的标题就是 Home 本身（点它 = 回全文档），不再另起一行重复 Home
@@ -175,10 +169,27 @@ export class SidebarView {
       if (counter.n >= MAX_ITEMS) return;
       const node = nodes[index];
       counter.n++;
-      parts.push(this.item(node, depth, true));
+      parts.push(this.item(node, depth, 'outline'));
       this.rows.push({ node, parentId, index, depth });
       if (node.children.length > 0 && this.expanded.has(node.id)) {
         this.renderTree(node.children, parts, depth + 1, node.id, counter);
+      }
+    }
+  }
+
+  /** 星标区：每个书签可展开成其子树（可看结构，但不作为拖拽源/落点，也不登记进 rows）。 */
+  private renderStarred(
+    nodes: readonly OutlineNode[],
+    parts: HTMLElement[],
+    depth: number,
+    counter: { n: number },
+  ): void {
+    for (const node of nodes) {
+      if (counter.n >= MAX_ITEMS) return;
+      counter.n++;
+      parts.push(this.item(node, depth, 'starred'));
+      if (node.children.length > 0 && this.expanded.has(node.id)) {
+        this.renderStarred(node.children, parts, depth + 1, counter);
       }
     }
   }
@@ -215,11 +226,13 @@ export class SidebarView {
     this.collapsedSections = new Set(keys);
   }
 
-  private toggleExpand(id: string): void {
+  private toggleExpand(id: string, section: SidebarNavSection): void {
     if (this.expanded.has(id)) this.expanded.delete(id);
     else this.expanded.add(id);
     this.render();
-    this.refocus(`.sidebar-item[data-id="${cssEscape(id)}"] > .sidebar-toggle`);
+    this.refocus(
+      `.sidebar-item[data-nav-section="${section}"][data-id="${cssEscape(id)}"] > .sidebar-toggle`,
+    );
   }
 
   /** render() 整栏重建会把焦点甩到 body：把它送回刚点的那个开关，键盘操作才连得上。 */
@@ -258,22 +271,20 @@ export class SidebarView {
     return row;
   }
 
-  private item(node: OutlineNode, depth: number, tree: boolean): HTMLElement {
+  private item(node: OutlineNode, depth: number, section: SidebarNavSection): HTMLElement {
     const model = this.model!;
-    const section: SidebarNavSection = tree ? 'outline' : 'starred';
+    const draggable = section === 'outline';
     const row = document.createElement('div');
     const active = node.id === model.currentZoomId && section === model.currentSection;
     row.className = 'sidebar-item' + (active ? ' active' : '');
     row.dataset.navSection = section;
     row.style.setProperty('--depth', String(depth));
-    // 只有大纲树行可拖拽（Home / 星标不参与结构移动）
-    if (tree) {
-      row.dataset.id = node.id;
-      row.classList.add('sidebar-draggable');
-    }
+    // 只有大纲树行可拖拽（星标书签不参与结构移动）；data-id 两区都挂，供 refocus 定位
+    row.dataset.id = node.id;
+    if (draggable) row.classList.add('sidebar-draggable');
 
-    // 展开/折叠三角（仅大纲树、且有子节点时）
-    if (tree && node.children.length > 0) {
+    // 展开/折叠三角（大纲树与星标区都可展开；有子节点时显示）
+    if (node.children.length > 0) {
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = 'sidebar-toggle';
@@ -283,7 +294,7 @@ export class SidebarView {
       toggle.setAttribute('aria-label', expanded ? t('sidebar.collapseNode') : t('sidebar.expandNode'));
       toggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.toggleExpand(node.id);
+        this.toggleExpand(node.id, section);
       });
       row.append(toggle);
     } else {
@@ -399,7 +410,9 @@ export class SidebarView {
   }
 
   private rowElement(id: string): HTMLElement | null {
-    return this.body.querySelector<HTMLElement>(`.sidebar-item[data-id="${cssEscape(id)}"]`);
+    return this.body.querySelector<HTMLElement>(
+      `.sidebar-item.sidebar-draggable[data-id="${cssEscape(id)}"]`,
+    );
   }
 
   /** 指针位置 → 落点。落点非法（跨 block / 成环）由 move op 兜底为 no-op，这里不重复校验。 */
