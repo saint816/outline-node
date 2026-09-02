@@ -12,6 +12,7 @@ describe('round-trip', () => {
     expect(fixtures.map((f) => f.name)).toEqual([
       'basic.md',
       'blank-lines.md',
+      'code-block-with-list.md',
       'code-fence.md',
       'crlf.md',
       'empty.md',

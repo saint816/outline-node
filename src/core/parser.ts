@@ -178,7 +178,10 @@ function tryAppendNote(list: ListContext, line: string, unit: IndentUnit): boole
   if (!blank) {
     const indent = leadingWhitespace(line);
     if (indent.length === 0) return false;
-    if (LIST_ITEM_RE.test(line)) return false;
+    // 代码块 note（围栏已开启）内的列表项行是代码内容，必须收进 note；
+    // 否则 `- ` / `1.` 开头的代码行会被当成新列表节点，把代码块拆得七零八落。
+    // 围栏外保持原语义：列表项行终止 note、成为新列表项。
+    if (LIST_ITEM_RE.test(line) && list.noteFence === null) return false;
     if (indentWidth(indent, unit) < list.lastContentCol) return false;
     if (list.noteBaseIndent === null) list.noteBaseIndent = indent;
   }

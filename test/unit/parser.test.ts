@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseOutline } from '../../src/core/parser.js';
+import { serializeOutline } from '../../src/core/serializer.js';
 import type { ListBlock, RawBlock } from '../../src/core/model.js';
 import { PARSE_OPTS, flatten, loadFixture } from './helpers.js';
 
@@ -208,5 +209,31 @@ describe('parseOutline — raw 保真通道', () => {
     const [a, b] = flatten(doc).map((e) => e.node);
     expect(a.raw).toEqual({ lines: ['- a', '  note'], depth: 0 });
     expect(b.raw).toEqual({ lines: ['  - b'], depth: 1 });
+  });
+});
+
+describe('parseOutline — 代码块 note 内的列表项行（回归：BUG 修复）', () => {
+  it('围栏已开启时，`- ` / `1.` 开头的行按代码内容收进 note，不再拆成新节点', () => {
+    const doc = parseOutline(loadFixture('code-block-with-list.md'), PARSE_OPTS);
+    // 开头标题行是 raw，随后整个列表只应有一个根节点，note 完整收拢两个代码块
+    expect(doc.blocks.map((b) => b.kind)).toEqual(['raw', 'list']);
+    const [root] = listBlock(doc, 1).roots;
+    expect(root.text).toBe('理解 skill 执行');
+    expect(root.children).toHaveLength(0);
+    expect(root.note).toContain('```text');
+    expect(root.note).toContain('- [ ] 任务一');
+    expect(root.note).toContain('1. 编号一');
+    expect(root.note).toContain('- 普通 bullet');
+    expect(root.note).toContain('第二个代码块');
+    // 序列化 round-trip 字节一致（红线 1）
+    expect(serializeOutline(doc)).toBe(loadFixture('code-block-with-list.md'));
+  });
+
+  it('围栏外：普通 note 里出现列表项行仍按原语义成为新节点', () => {
+    const doc = parseOutline('- 根\n  note 一行\n  - 子节点\n', PARSE_OPTS);
+    const [root] = listBlock(doc, 0).roots;
+    expect(root.note).toBe('note 一行');
+    expect(root.children).toHaveLength(1);
+    expect(root.children[0].text).toBe('子节点');
   });
 });
