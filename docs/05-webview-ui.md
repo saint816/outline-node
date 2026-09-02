@@ -221,9 +221,8 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 条目复用现有 op、不改数据模型：
 
 - **Code block**：只要节点没有既有备注且不是镜像，入口始终可选；执行 `setText(标题)` + `setNote(围栏)`，代码块挂在标题行下方。空标题也先创建，再聚焦“请先填写节点标题”行；已有备注与镜像节点禁用。
-- **Numbered**：先 `setText` 删掉 `/query`，再 `toggleOrdered`（已是有序则跳过）。
 
-菜单只保留 Code 与 Numbered；删除的是 To-do 创建入口，不删除 `setChecked`、已有任务解析或完成状态操作。无匹配时只显示占位、不拦截 Enter。所有条目文案走 `t()` 双语（见 i18n.ts `slash.*`）。
+菜单只保留 Code；Numbered List 与 To-do 创建入口均已移除，不删除 `setChecked`、已有任务解析或完成状态操作。无匹配时只显示占位、不拦截 Enter。所有条目文案走 `t()` 双语（见 i18n.ts `slash.*`）。
 
 ## 拖拽（dnd.ts）
 

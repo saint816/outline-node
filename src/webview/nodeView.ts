@@ -93,10 +93,8 @@ export class NodeView {
     this.row.classList.toggle('mirror', node.mirror !== null);
     // 正文只有图片语法 → 不显示源码，只留图（CSS 在未聚焦时把 .text 透明掉，见 styles.css）
     this.row.classList.toggle('image-only', node.mirror === null && isImageOnly(node.text));
-    // 有序项：bullet 位显示编号（`12.`），普通节点为空（由 CSS 画圆点）
-    this.row.classList.toggle('ordered', node.ordered != null);
-    const bulletText = node.ordered ? node.ordered.num + node.ordered.delim : '';
-    if (this.bulletEl.textContent !== bulletText) this.bulletEl.textContent = bulletText;
+    // bullet 位为空：节点圆点由 CSS 绘制（有序编号已移除）
+    if (this.bulletEl.textContent !== '') this.bulletEl.textContent = '';
     this.el.classList.toggle('has-children', node.children.length > 0);
     this.toggleEl.style.visibility = node.children.length > 0 ? 'visible' : 'hidden';
 

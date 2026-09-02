@@ -4,8 +4,8 @@
 // 触发：`/` 位于词首（行首或紧跟空白）且光标在正文（text 字段）。`/` 后到光标的连续非空白
 // 串是过滤 query。无匹配时只显示占位提示、不拦截 Enter（让普通拆分照常发生）。
 //
-// 条目复用现有 op：代码块 setText+setNote（挂到该节点下，节点保留 bullet）、
-// 编号 toggleOrdered。所有条目都先删掉 `/query` 再转换。
+// 条目复用现有 op：代码块 setText+setNote（挂到该节点下，节点保留 bullet）。
+// 所有条目都先删掉 `/query` 再转换。
 
 import type { CaretPos } from './caret.js';
 import { caretRect, saveCaret } from './caret.js';
@@ -23,7 +23,7 @@ export interface SlashMenuContext {
 }
 
 interface SlashItem {
-  key: 'code' | 'numbered';
+  key: 'code';
   label: () => string;
   hint?: () => string;
   keywords: string[];
@@ -38,12 +38,6 @@ const ITEMS: SlashItem[] = [
     // 任何节点都能挂代码块（写进该节点的 note）。已有备注的节点除外：
     // note 只有一份，代码块会顶掉原备注。
     enabled: (node) => node.note === null && node.mirror === null,
-  },
-  {
-    key: 'numbered',
-    label: () => t('slash.numbered'),
-    keywords: ['number', 'numbered', 'ordered', 'ol', 'list', '有序', '编号', '列表'],
-    enabled: (node) => node.mirror === null,
   },
 ];
 
@@ -139,7 +133,7 @@ export class SlashMenu {
       case 'Tab':
         if (this.results.length === 0) return false;
         e.preventDefault();
-        this.choose(this.results[this.selected]);
+        this.choose();
         return true;
       case 'ArrowLeft':
       case 'ArrowRight':
@@ -174,42 +168,31 @@ export class SlashMenu {
     if (idx === undefined) return;
     e.preventDefault(); // 别让正文失焦
     const item = this.results[Number(idx)];
-    if (item) this.choose(item);
+    if (item) this.choose();
   }
 
-  private choose(item: SlashItem): void {
+  private choose(): void {
     if (this.nodeId === null) return this.close();
     const node = this.ctx.store.findNode(this.nodeId);
     if (!node) return this.close();
 
-    // 其余条目节点保留：先删掉 /query，再转换；光标落到删除处
+    // 先删掉 /query，再转换；光标落到删除处
     const newText = removeSlashToken(node.text, this.start, this.end);
 
-    if (item.key === 'code') {
-      // 一律挂到该节点下（见 docs/05「代码块」），顶层空壳也不例外——转成文档级块会丢掉
-      // bullet，拖不动也缩进不了（实机反馈）。一次 dispatchAll = 一个 undo 步
-      // 空标题也允许先创建，随后把光标留在始终可见的标题行要求补填；不能为了“标题必填”
-      // 把 Code 入口藏掉，否则用户连代码块都无法触发。
-      if (newText.trim() === '') {
-        this.ctx.setNextCaret({ nodeId: node.id, field: 'text', offset: 0 });
-      } else {
-        this.ctx.focusNoteCode(node.id);
-      }
-      this.ctx.store.dispatchAll([
-        { op: 'setText', id: node.id, text: newText },
-        { op: 'setNote', id: node.id, note: emptyFence('') },
-      ]);
-      return this.close();
+    // 一律挂到该节点下（见 docs/05「代码块」），顶层空壳也不例外——转成文档级块会丢掉
+    // bullet，拖不动也缩进不了（实机反馈）。一次 dispatchAll = 一个 undo 步
+    // 空标题也允许先创建，随后把光标留在始终可见的标题行要求补填；不能为了“标题必填”
+    // 把 Code 入口藏掉，否则用户连代码块都无法触发。
+    if (newText.trim() === '') {
+      this.ctx.setNextCaret({ nodeId: node.id, field: 'text', offset: 0 });
+    } else {
+      this.ctx.focusNoteCode(node.id);
     }
-    const caret: CaretPos = { nodeId: this.nodeId, field: 'text', offset: this.start };
-    this.ctx.setNextCaret(caret);
-    this.ctx.store.dispatch({ op: 'setText', id: node.id, text: newText });
-
-    if (item.key === 'numbered' && !node.ordered) {
-      this.ctx.setNextCaret(caret);
-      this.ctx.store.dispatch({ op: 'toggleOrdered', id: node.id });
-    }
-    this.close();
+    this.ctx.store.dispatchAll([
+      { op: 'setText', id: node.id, text: newText },
+      { op: 'setNote', id: node.id, note: emptyFence('') },
+    ]);
+    return this.close();
   }
 
   private render(): void {

@@ -32,7 +32,6 @@ function stripRaw(node: OutlineNode): NodeSnapshot {
     id: node.id,
     text: node.text,
     checked: node.checked,
-    ...(node.ordered ? { ordered: node.ordered } : {}),
     note: node.note,
     blockId: node.blockId,
     mirror: node.mirror,

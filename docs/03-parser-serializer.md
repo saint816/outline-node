@@ -35,8 +35,7 @@ default     → 逐行分类，见下
    - 内容列 = 列表项行的 `缩进宽度 + marker 长度 + 1`（`- ` / `12. ` 之后正文起始列；marker 为 bullet 或有序标记）。
    - note 判定优先于 fence 判定：note 里写 ``` 会被当作 note 文本保留（不进入 fence 状态）。
 2. **fence 开启行**：进入 fence 状态（连带终结当前 ListBlock）。
-3. **列表项行**：正则 `/^([ \t]*)([-*+]|\d{1,9}[.)]) (.*)$/`（marker 为 bullet 或有序 `1.`/`1)`）。命中后进一步剥离：
-   - 有序 marker：`\d+.` / `\d+)` → `ordered = { delim, num }`（num 为行内字面数字，刻意不自动重排，见 02）；bullet 则无 `ordered`；
+3. **列表项行**：正则 `/^([ \t]*)([-*+]|\d{1,9}[.)]) (.*)$/`（marker 为 bullet 或数字 marker `1.`/`1)`——数字 marker 按普通 bullet 处理，不设编号属性；未编辑时 raw 原样保留，编辑后序列化为 `- `）。命中后进一步剥离：
    - checkbox：正文前缀匹配 `/^\[( |x|X)\] /` → `checked = false | true`，剥掉前缀；
    - blockId：正文行尾匹配 `/ \^([A-Za-z0-9-]+)$/` → 存 `blockId`，剥掉后缀；
    - mirror：剥完后正文**恰为** `![[#^<id>]]` → `mirror = id`（此时 text 保留原文字符串，渲染层特殊处理，见 06）。

@@ -10,7 +10,6 @@ import {
   detectIndent,
   indentWidth,
   isFenceClose,
-  parseOrderedMarker,
 } from './indent.js';
 import type { Block, IndentUnit, ListBlock, OutlineDoc, OutlineNode } from './model.js';
 
@@ -211,7 +210,6 @@ function appendListItem(
   const indent = match[1];
   const width = indentWidth(indent, unit);
   const marker = match[2];
-  const ordered = parseOrderedMarker(marker);
   let content = match[3];
 
   let checked: boolean | null = null;
@@ -246,7 +244,6 @@ function appendListItem(
     children: [],
     raw: { lines: [line], depth },
   };
-  if (ordered) node.ordered = ordered;
 
   const parent = list.stack[list.stack.length - 1];
   if (parent) parent.node.children.push(node);

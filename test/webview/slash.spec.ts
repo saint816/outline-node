@@ -1,4 +1,4 @@
-// 斜杠插入菜单（/ → Code/编号）。To-do 入口已移除，已有任务节点能力仍由 core 保留。
+// 斜杠插入菜单（/ → Code）。To-do 与 Numbered 入口已移除，已有任务节点能力仍由 core 保留。
 import { expect, test } from '@playwright/test';
 import { clearPosted, focusText, inject, node, openOutline } from './support.js';
 
@@ -26,14 +26,14 @@ async function waitForOp(
   );
 }
 
-test('空标题节点的 / 菜单仍提供 Code 和 Numbered', async ({ page }) => {
+test('空标题节点的 / 菜单只提供 Code', async ({ page }) => {
   await openOutline(page, [node('a', '')]);
   await focusText(page, 'a', 0);
   await page.keyboard.type('/');
 
   const menu = page.locator('.slash-menu');
   await expect(menu).toBeVisible();
-  await expect(menu.locator('.slash-item')).toHaveText([/Code block/, /Numbered list/]);
+  await expect(menu.locator('.slash-item')).toHaveText([/Code block/]);
 });
 
 test('/code 可先创建代码块；空标题时聚焦必填标题行', async ({ page }) => {
@@ -82,16 +82,20 @@ test('/todo 不再提供类型入口，Enter 按普通节点拆分处理', async
   await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText('/todo');
 });
 
-test('/num + Enter：删掉 /num 并转有序列表（toggleOrdered）', async ({ page }) => {
+test('/num 不再提供 Numbered 入口，Enter 按普通节点拆分处理', async ({ page }) => {
   await openOutline(page, [node('a', '')]);
   await focusText(page, 'a', 0);
   await clearPosted(page);
   await page.keyboard.type('/num');
+  await expect(page.locator('.slash-menu .slash-empty')).toBeVisible();
   await page.keyboard.press('Enter');
-
-  await inject(page, { type: 'ack', seq: 1, version: 2 });
-  await waitForOp(page, 'toggleOrdered');
-  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText('');
+  const edits = (await page.evaluate(() => (window as never as EditWindow).__posted)).filter(
+    (message) => message.type === 'edit',
+  );
+  expect(
+    edits.some((message) => (message.ops ?? []).some((op) => op.op === 'toggleOrdered')),
+  ).toBe(false);
+  await expect(page.locator('.node[data-id="a"] > .node-row > [data-field="text"]')).toHaveText('/num');
 });
 
 test('嵌套节点上标题 + /code：代码块挂到标题行下方', async ({ page }) => {

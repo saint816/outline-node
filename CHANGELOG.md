@@ -2,6 +2,13 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [1.1.0] - 2026-09-02
+
+### Removed
+
+- 移除 Numbered List（有序列表）功能：`/` 菜单不再提供 Numbered 条目，`Cmd/Ctrl+Shift+7` 不再切换有序列表，`toggleOrdered` op 从协议与实现中删除。
+- 已有 `1.` / `1)` 编号行不再渲染编号（显示为普通圆点节点）；未编辑的文件内容保持字节原样，编辑后按普通 bullet（`- `）序列化。
+
 ## [1.0.3] - 2026-08-31
 
 ### Fixed

@@ -54,7 +54,6 @@ export type MessageKey =
   | 'help.undo'
   | 'help.search'
   | 'help.hideCompleted'
-  | 'help.ordered'
   | 'help.help'
   | 'help.slash'
   | 'help.codeExit'
@@ -85,7 +84,6 @@ export type MessageKey =
   | 'slash.noResults'
   | 'slash.codeBlock'
   | 'slash.codeTitleRequired'
-  | 'slash.numbered'
   | 'deleteConfirm.title'
   | 'deleteConfirm.message'
   | 'deleteConfirm.cancel'
@@ -133,7 +131,6 @@ const EN: Record<MessageKey, string> = {
   'help.undo': 'Undo / redo',
   'help.search': 'Focus search',
   'help.hideCompleted': 'Hide / show completed',
-  'help.ordered': 'Toggle ordered list',
   'help.help': 'Toggle this help',
   'help.slash': 'Open the / insert menu',
   'help.codeExit': 'New node after code block',
@@ -164,7 +161,6 @@ const EN: Record<MessageKey, string> = {
   'slash.noResults': 'No matches',
   'slash.codeBlock': 'Code block',
   'slash.codeTitleRequired': 'Enter a node title before inserting a code block',
-  'slash.numbered': 'Numbered list',
   'deleteConfirm.title': 'Delete subtree?',
   'deleteConfirm.message': 'Delete {roots} selected node(s) and {descendants} descendant(s)? This can be undone.',
   'deleteConfirm.cancel': 'Cancel',
@@ -213,7 +209,6 @@ const ZH: Record<MessageKey, string> = {
   'help.undo': '撤销 / 重做',
   'help.search': '聚焦搜索框',
   'help.hideCompleted': '隐藏 / 显示已完成',
-  'help.ordered': '切换有序列表',
   'help.help': '开关本帮助',
   'help.slash': '打开 / 插入菜单',
   'help.codeExit': '在代码块后新建节点',
@@ -244,7 +239,6 @@ const ZH: Record<MessageKey, string> = {
   'slash.noResults': '无匹配',
   'slash.codeBlock': '代码块',
   'slash.codeTitleRequired': '请先填写节点标题，再插入代码块',
-  'slash.numbered': '有序列表',
   'deleteConfirm.title': '删除子树？',
   'deleteConfirm.message': '将删除 {roots} 个选中节点及 {descendants} 个后代，可通过撤销恢复。',
   'deleteConfirm.cancel': '取消',

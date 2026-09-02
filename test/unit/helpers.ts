@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Block, IndentUnit, OrderedMarker, OutlineDoc, OutlineNode } from '../../src/core/model.js';
+import type { Block, IndentUnit, OutlineDoc, OutlineNode } from '../../src/core/model.js';
 
 const FIXTURE_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'fixtures');
 
@@ -29,7 +29,6 @@ export function loadFixture(name: string): string {
 interface NodeShape {
   text: string;
   checked: boolean | null;
-  ordered: OrderedMarker | null;
   note: string | null;
   blockId: string | null;
   mirror: string | null;
@@ -64,7 +63,6 @@ function shapeNode(node: OutlineNode): NodeShape {
   return {
     text: node.text,
     checked: node.checked,
-    ordered: node.ordered ?? null,
     note: node.note,
     blockId: node.blockId,
     mirror: node.mirror,

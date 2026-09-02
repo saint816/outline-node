@@ -54,7 +54,7 @@ Use `Cmd` on macOS, `Ctrl` on Windows and Linux.
 
 The formatting and hide-completed keys deliberately avoid `Cmd+B` / `Cmd+O`: webview keystrokes are handed to the workbench for keybinding resolution, so VS Code's own bindings (toggle sidebar, open file) win no matter what the webview does. The floating toolbar that appears over selected text is the primary entry point for formatting.
 
-A node code block requires a title, but its creation entry is always available: type `/code`, or type a fence on an empty line and press Enter. If the title is still empty, focus stays on the always-visible “title required” row above the new block. You can also type `Parse YAML /code` directly. Existing untitled blocks show the same editable prompt without silently changing the Markdown. The `/` menu contains Code and Numbered List; existing task nodes remain fully supported.
+A node code block requires a title, but its creation entry is always available: type `/code`, or type a fence on an empty line and press Enter. If the title is still empty, focus stays on the always-visible “title required” row above the new block. You can also type `Parse YAML /code` directly. Existing untitled blocks show the same editable prompt without silently changing the Markdown. The `/` menu contains Code only; existing task nodes remain fully supported.
 
 ## Usage
 
