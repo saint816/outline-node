@@ -114,6 +114,8 @@ webview 与扩展宿主的用户可见文案全部是中文，会出现在商店
 - 组合（IME）期间的 Enter 会往 `contenteditable="plaintext-only"` 里插入换行，`05-webview.md` 写的"直接 return"不足以阻止，仍需 `preventDefault`。
 - Playwright 跑了 stale `dist/`；ESLint 扫 315MB 的 `.vscode-test/` 把 Node OOM；a11y 焦点环测试因 harness 缺 `--vscode-*` 变量导致所有 `var()` 声明失效而失败。
 
+**2026-09-02 更新**：插件 UI 已做双语（webview 跟随 VS Code 语言，`<html lang>` 驱动），`media/demo.gif` 已替换为**英文版演示**（英文 UI + 英文示例大纲，覆盖折叠/内联编辑/zoom/搜索）。录制脚本：`scripts/record-demo.mjs`（harness + Playwright recordVideo → ffmpeg 转 GIF，880×400 / 12fps）。README 图引用为 GitHub raw URL，push 后 Marketplace 页自动更新，无需重新上传 vsix。
+
 ## 5. 未决的规格冲突
 
 两处 `docs/` 内部矛盾，M1 / M6 时提出，截至 0.1.0 发布仍未裁决，当前实现各自选了一边：
