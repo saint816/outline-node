@@ -39,6 +39,7 @@ export class NodeView {
   /** 图片是否挂在节点行内（图片节点）而非行下方。 */
   private imagesInline = false;
   private dividerTools: HTMLElement | null = null;
+  private divider: 'plain' | 'title' | null | undefined;
 
   constructor(
     node: OutlineNode,
@@ -166,6 +167,8 @@ export class NodeView {
   private syncDivider(node: OutlineNode): void {
     if (this.noteEl === document.activeElement) return;
     const kind = dividerKind(node);
+    if (kind === this.divider) return;
+    this.divider = kind;
     this.row.classList.toggle('divider', kind !== null);
     this.row.classList.toggle('divider-plain', kind === 'plain');
     this.row.classList.toggle('divider-title', kind === 'title');
