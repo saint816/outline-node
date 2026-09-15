@@ -46,4 +46,4 @@
 
 ## 基准 fixture
 
-`test/perf/gen-fixture.ts` 生成确定性 5000 节点文件（深度 1–6 混合、10% 带 note、10% 带 checkbox），playwright 脚本测量四项红线指标，CI 中跑（阈值放宽 2 倍容忍 CI 机器抖动，本地按红线严格执行）。
+`test/perf/gen-fixture.ts` 生成确定性 5000 节点文件（深度 1–6 混合、10% 带 note、10% 带 checkbox），playwright 脚本测量四项红线指标，CI 中跑。共享 GitHub runner 实测约为本机 2.8 倍，CI 阈值放宽 3 倍；本地仍按红线严格执行。

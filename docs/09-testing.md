@@ -70,4 +70,4 @@ interface SessionHost {
 jobs: lint → unit (vitest) → webview (playwright) → integration (xvfb) → package (vsce, 产物上传)
 ```
 
-性能基准（见 07）在 webview job 内跑，阈值取红线 ×2 容忍 CI 抖动；本地开发按红线严格执行。
+性能基准（见 07）在 webview job 内跑；共享 GitHub runner 实测约为本机 2.8 倍，因此 CI 阈值取红线 ×3，本地开发仍按红线严格执行。

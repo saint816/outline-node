@@ -1,10 +1,10 @@
 // 性能红线（docs/07）：5000 节点首帧 < 500ms、击键反馈 < 16ms、外部 refresh patch < 50ms。
-// CI 阈值放宽 2 倍容忍机器抖动，本地按红线严格执行。
+// CI 共享 runner 实测约为本机 2.8 倍（125ms vs 45ms），放宽 3 倍；本地仍守严格红线。
 import { expect, test } from '@playwright/test';
 import { HARNESS, CONFIG } from '../webview/support.js';
 import { generateSnapshot } from './gen-fixture.js';
 
-const factor = process.env.CI ? 2 : 1;
+const factor = process.env.CI ? 3 : 1;
 const FIRST_FRAME_MS = 500 * factor;
 const KEYSTROKE_MS = 16 * factor;
 const PATCH_MS = 50 * factor;
