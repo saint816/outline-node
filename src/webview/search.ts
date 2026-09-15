@@ -9,26 +9,40 @@ const DEBOUNCE_MS = 150;
 export class SearchBox {
   readonly el: HTMLElement;
   private readonly input: HTMLInputElement;
+  private readonly toggle: HTMLButtonElement;
   private timer: number | null = null;
 
   constructor(private readonly onQuery: (query: string) => void) {
     this.el = document.createElement('div');
-    this.el.className = 'toolbar';
+    this.el.className = 'toolbar search-box';
 
     this.input = document.createElement('input');
     this.input.className = 'search-input';
     this.input.type = 'search';
     this.input.placeholder = t('search.placeholder');
     this.input.setAttribute('aria-label', t('search.ariaLabel'));
-    this.input.addEventListener('input', () => this.schedule());
+    this.input.addEventListener('input', () => {
+      this.syncExpanded();
+      this.schedule();
+    });
+    this.input.addEventListener('focus', () => this.syncExpanded());
+    this.input.addEventListener('blur', () => this.syncExpanded());
     this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         this.clear();
+        this.input.blur();
       }
     });
 
-    this.el.append(this.input);
+    this.toggle = document.createElement('button');
+    this.toggle.type = 'button';
+    this.toggle.className = 'search-toggle';
+    this.toggle.setAttribute('aria-label', t('search.ariaLabel'));
+    this.toggle.title = t('search.ariaLabel');
+    this.toggle.addEventListener('click', () => this.focus());
+
+    this.el.append(this.input, this.toggle);
   }
 
   get query(): string {
@@ -36,14 +50,21 @@ export class SearchBox {
   }
 
   focus(): void {
+    this.el.classList.add('expanded');
     this.input.focus();
     this.input.select();
   }
 
   clear(): void {
-    if (this.input.value === '') return;
-    this.input.value = '';
-    this.emit();
+    if (this.input.value !== '') {
+      this.input.value = '';
+      this.emit();
+    }
+    this.syncExpanded();
+  }
+
+  private syncExpanded(): void {
+    this.el.classList.toggle('expanded', document.activeElement === this.input || this.input.value !== '');
   }
 
   private schedule(): void {

@@ -241,23 +241,103 @@ body {
 /* ---------- 搜索 ---------- */
 
 .toolbar {
-  max-width: 900px;
-  margin: 0 auto 8px;
+  margin: 0;
+}
+
+.search-box {
+  display: flex;
+  flex: 0 1 28px;
+  align-items: center;
+  justify-content: flex-end;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition: width 140ms ease-out, flex-basis 140ms ease-out, border-color 140ms ease-out,
+    background-color 140ms ease-out;
+}
+
+.search-box.expanded {
+  flex-basis: min(360px, 46vw);
+  width: min(360px, 46vw);
+  border-color: var(--vscode-input-border, transparent);
+  background: var(--vscode-input-background);
 }
 
 .search-input {
-  width: 100%;
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
   box-sizing: border-box;
-  padding: 4px 8px;
-  border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 3px;
-  background: var(--vscode-input-background);
+  padding: 3px 0;
+  border: none;
+  background: transparent;
   color: var(--vscode-input-foreground);
   font: inherit;
+  opacity: 0;
+  outline: none;
+  transition: opacity 90ms linear, padding 140ms ease-out;
 }
 
-.search-input:focus {
+.search-box.expanded .search-input {
+  padding-left: 8px;
+  opacity: 1;
+}
+
+.search-box:focus-within {
   outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.search-toggle {
+  position: relative;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+.search-toggle::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--vscode-descriptionForeground);
+  border-radius: 50%;
+}
+
+.search-toggle::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  width: 7px;
+  height: 1.5px;
+  background: var(--vscode-descriptionForeground);
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+
+.search-toggle:hover {
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.search-toggle:hover::before {
+  border-color: var(--vscode-editor-foreground);
+}
+
+.search-toggle:hover::after {
+  background: var(--vscode-editor-foreground);
 }
 
 /* 过滤只切 class，不动 DOM 结构（见 docs/07） */
@@ -1015,7 +1095,9 @@ body {
 
 /* 尊重系统的减少动效设置 */
 @media (prefers-reduced-motion: reduce) {
-  .toggle {
+  .toggle,
+  .search-box,
+  .search-input {
     transition: none;
   }
 }
@@ -1030,11 +1112,13 @@ body {
   margin: 0 auto 8px;
 }
 
-/* 搜索框（原 .toolbar）嵌进工具条后铺满中段 */
+/* 左侧导航占据剩余空间，搜索从右端图标位置向左展开。 */
 .topbar > .toolbar {
-  flex: 1;
   max-width: none;
-  margin: 0;
+}
+
+.topbar-nav {
+  margin-right: auto;
 }
 
 .topbar-nav,
@@ -1265,6 +1349,32 @@ body {
   cursor: pointer;
 }
 
+/* 侧栏里的分隔线保持为一行：普通分隔线只画线，带标题分隔线把标题夹在线中间。 */
+.sidebar-divider > .sidebar-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+}
+
+.sidebar-divider > .sidebar-label::before,
+.sidebar-divider > .sidebar-label::after {
+  content: '';
+  flex: 1 1 12px;
+  height: 1px;
+  background: var(--vscode-panel-border, var(--vscode-descriptionForeground));
+}
+
+.sidebar-divider-plain > .sidebar-label {
+  gap: 0;
+  font-size: 0;
+}
+
+.sidebar-divider-plain > .sidebar-label::after {
+  display: none;
+}
+
 .sidebar-item:not(.active):hover {
   background: var(--vscode-list-hoverBackground);
   border-radius: 4px;
@@ -1364,7 +1474,7 @@ body {
 /* Dividers remain tree nodes; the text editor and drag handle keep their identity. */
 .node-row.divider { position: relative; min-height: 44px; align-items: center; }
 .divider > .text { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--vscode-descriptionForeground); }
-.divider > .text::before, .divider > .text::after { content: ''; flex: 1 0 24px; border-top: 1px solid var(--vscode-panel-border, var(--vscode-descriptionForeground)); margin: 0 12px; pointer-events: none; }
+.divider > .text::before, .divider > .text::after { content: ''; flex: 1 0 24px; height: 1px; background: var(--vscode-panel-border, var(--vscode-descriptionForeground)); margin: 0 12px; pointer-events: none; }
 .divider-plain > .text:not(:focus) { font-size: 0; }
 .divider-plain > .text:not(:focus)::before { width: 100%; margin: 0; }
 .divider-plain > .text:not(:focus)::after { display: none; }

@@ -59,10 +59,6 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
     return;
   }
 
-  // 隐藏 / 显示已完成（Cmd/Ctrl+Alt+O，避开 VS Code 的 ⌘O）在 document 级监听
-  // （见 main.ts）：隐藏后被隐藏节点的焦点会掉到 body，root 级监听收不到第二次
-  // 按键（焦点陷阱，BUG-002）。
-
   // undo 三道闸之二：转发给 host 执行 VS Code 的 undo（红线 5）
   if (mod && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault();

@@ -50,7 +50,7 @@ export function restoreCaret(pos: CaretPos): void; // offset clamp 到新文本�
 
 ## IME 守卫（ime.ts）— 红线 4
 
-分隔线（1.2.0）：`/divider` 将空节点转换为横线，有文字节点转换为居中标题横线；已有备注、任务、镜像不提供转换。`---` + Enter 转换并创建下一节点。转换复用 setText/setNote，dispatchAll 合为一次撤销。标题直接编辑；悬停/聚焦提供“添加标题”“转为普通节点”。行首 Backspace 先取消样式，保留子节点。横线 Enter 创建后续同级，zoom 根创建首子节点。Shift+Enter 不打开横线备注。分隔线不支持单节点完成切换，多选完成后自然恢复普通任务显示。输入期间不重建 text DOM，IME 期间不切换布局。
+分隔线（1.2.0）：`/divider` 将空节点转换为横线，有文字节点转换为居中标题横线；已有备注、任务、镜像不提供转换。`---` + Enter 转换并创建下一节点。转换复用 setText/setNote，dispatchAll 合为一次撤销。标题直接编辑；悬停/聚焦提供“添加标题”“转为普通节点”。行首 Backspace 先取消样式，保留子节点。横线 Enter 创建后续同级，zoom 根创建首子节点。Shift+Enter 不打开横线备注。分隔线不支持单节点完成切换，多选完成后自然恢复普通任务显示。输入期间不重建 text DOM，IME 期间不切换布局。横线使用有实际高度的 1px flex item 与标题垂直居中；侧栏为分隔线使用独立的单行样式，普通分隔线只画线，带标题分隔线把标题夹在线中间。
 
 ```ts
 export const ime = { composing: boolean, pendingRefresh: H2W | null };
@@ -92,7 +92,6 @@ export const ime = { composing: boolean, pendingRefresh: H2W | null };
 | `Shift+↑` / `Shift+↓`（在首/末行） | 进入 / 扩展节点多选（见下「多选」） |
 | `Cmd/Ctrl+Z` (+Shift) | undo/redo 转发（见上） |
 | `Cmd/Ctrl+F` | 聚焦插件内搜索框（过滤式搜索，不用 VS Code find widget） |
-| `Ctrl+O`（mac）/ `Ctrl+Alt+O`（其他） | 隐藏 / 显示已完成。webview 的按键会被转发给工作台做快捷键解析，只能挑 VS Code 没占的组合——已被实机否掉两轮：`Cmd+O` = 「打开文件」、`Cmd+Alt+O` = Remote 扩展「Open Remote Window」。Windows/Linux 上 `Ctrl+O` 才是「打开文件」，故分平台。平台由 host 注入 `<html data-platform>`（**不嗅探 UA**：Playwright 的 Chromium 在 macOS 上报 Windows UA）。判定用 `e.code === 'KeyO'`，不受 Option 改字符 / 布局影响；监听挂 document 级（BUG-002） |
 | `Esc` | 退出多选 / 清除搜索 / 取消拖拽 / **退出代码块回到节点正文** |
 | 代码块内 `↑` / `↓`（首/末行） | 回本节点正文 / 去下一个可见节点。**其余方向键与回车一律留给 textarea**：大纲 keymap 不认识 textarea 的行结构，中间行按 ↓ 会把光标弹到别的节点（见 main.ts `CODE_LOCAL_KEYS`） |
 
@@ -154,9 +153,9 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 
 ## 剪贴板（clipboard.ts）
 
-- **paste**：`preventDefault()`；先看剪贴板里有没有图片：
+- **paste**：先看剪贴板里有没有图片；图片和多行文本由我们 `preventDefault()` 后接管，单行纯文本交给 `contenteditable="plaintext-only"` 的浏览器原生插入，避免重建光标：
   - **图片** → 生成唯一文件名，经 store 在光标处插入 `![[<assetsDir>/name]]`（**不用 `execCommand`**：它在 VS Code webview 里对 `plaintext-only` 静默失败，图写了盘正文没引用，真机复现过），并发 `saveImage{name, dataBase64}` 让 host 写盘（见 04）。落盘目录是 host 注入的 `data-assets-dir` = `<文件名去扩展名>/assets`，不再撒在笔记同级目录；
-  - 否则取 `clipboardData.getData('text/plain')`：多行且含列表语法 → 复用 **core parser** 解析出子树发 `insertSubtree`；多行无列表语法 → 按行拆为兄弟节点发 `insertSubtree`；单行 → 插入 caret 处走 `setText`。
+  - 否则取 `clipboardData.getData('text/plain')`，先把 CR/LF 与 Unicode 行分隔符统一为 LF：列表块复用 **core parser** 还原子树，列表前后 RawBlock 的每个非空行也必须按原顺序转为节点，禁止只取首个 ListBlock 静默丢内容；无列表语法按行拆为兄弟节点；单行文本由浏览器插入后走正常 `input` / `setText` 同步。
 - **copy/cut**：**多选优先**——选区非空时把选中的全部子树序列化成一份 markdown 列表（cut 再整段 `delete`）；否则退回单节点：选中文本走浏览器默认，光标所在节点则序列化整棵子树（复用 core serializer），与外界互粘闭环；cut 追加 `delete` op。
 
 ## 行内 Markdown（inline.ts）
@@ -178,7 +177,7 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 - **纯逻辑在 `format.ts`**（`toggleMarker` / `toggleLink`），不碰 DOM，靠单测覆盖；语义是「再按一次取消」——选区两侧紧邻标记、或选区自身就是 `**…**`，都识别为取消。
 - **工具条是主入口**：选中文字浮出 B / 高亮 / 代码 / 链接。按钮的 `mousedown` 必须 `preventDefault`，否则按下的瞬间选区就没了。
 - **链接按钮打开双输入框**：标题默认是选中文字，URL 默认聚焦；选中完整 `[title](url)` 时解析回填。Enter 提交、Esc / 点击外部取消，提交后光标落到完整链接之后。URL 只要求非空单行；真正打开时仍由 host 的 `http` / `https` / `mailto` 白名单兜底。
-- **快捷键只能挑 VS Code 没占的组合**（`formatKeyOf`）：mac `Ctrl+B` / `Ctrl+H`，其他平台 `Ctrl+Alt+B` / `Ctrl+Alt+H`。理由同 `Ctrl+O`：webview 按键会转发给工作台，`preventDefault` 拦不住原生绑定。
+- **不注册排版与隐藏完成项的 Ctrl/Alt 快捷键**：webview 的按键还会被 VS Code、输入法和系统处理，硬编码组合无法可靠避让。排版以浮动工具条为唯一入口，隐藏完成项使用顶部 `✓` 按钮。
 - **选中文字时粘贴 URL → 直接包成 `[选中的字](url)`**。判据 `looksLikeUrl` 刻意**从严**：单个 token，且带 `http(s)`/`mailto` 协议或 `www.` 前缀——宁可漏判走普通粘贴，也不能把普通文字误当链接吞掉选中内容。选区折叠时 `applyFormat(requireSelection)` 返回 false，粘贴照常走浏览器默认插入。选中的整段本身已是链接时，给了新 url 就**换地址**（不是还原成纯文字，那是工具条 `url === ''` 的语义）。
 - **施加走 `store.setNodeText`（打字热路径，不 emit）**：所以要自己把新文本写回 DOM、`sidebar.syncText` 跟上、再用 `selectRange` 重设选区——选中的仍是内容而非标记，可以连点两次叠加 `**==x==**`。
 
@@ -238,7 +237,7 @@ zoom 根渲染成页面标题：`toggle` 完全不占位（`display:none`）、`
 
 ## 搜索（search.ts）
 
-- 顶部固定搜索框，输入 150ms 防抖。
+- 顶部默认只显示搜索图标；点击或 `Cmd/Ctrl+F` 聚焦时向左展开，空值失焦后收起，有查询词时保持展开。宽度动效约 140ms，并在 `prefers-reduced-motion` 下关闭；输入仍按 150ms 防抖。
 - 过滤规则：命中节点 + 其全部祖先显示，其余加 `.hidden` class；**不动 DOM 结构**（性能，见 07）。命中节点整行背景高亮（v1 不做子串级 `<mark>` 高亮——与 plaintext-only 的单 text node 模型冲突，留给后续用 overlay 层实现）。
 - 匹配：大小写不敏感子串，命中 `text` 与 `note`。
 - 清空/Esc → 移除所有 `.hidden`，恢复折叠状态原样。

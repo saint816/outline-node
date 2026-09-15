@@ -25,6 +25,7 @@ test('搜索：命中节点与祖先链保留，其余只加 class 不动 DOM', 
   ]);
 
   const domCount = await page.locator('.node').count();
+  await page.getByRole('button', { name: 'Search nodes' }).click();
   await page.locator('.search-input').fill('周报');
   await expect(page.locator('.node.hidden')).toHaveCount(3);
 
@@ -45,6 +46,7 @@ test('搜索：命中 note，且能穿透折叠子树', async ({ page }) => {
   await page.locator('.node[data-id="a"] > .node-row > .toggle').click();
   expect(await textsInDom(page)).toEqual(['父节点', '别的']); // 已折叠
 
+  await page.getByRole('button', { name: 'Search nodes' }).click();
   await page.locator('.search-input').fill('关键词');
   // 折叠的子节点为了搜索被挂载出来
   await expect(page.locator('.node[data-id="a1"]')).toHaveClass(/search-hit/);
@@ -58,14 +60,37 @@ test('搜索：命中 note，且能穿透折叠子树', async ({ page }) => {
 
 test('Cmd/Ctrl+F 聚焦搜索框，Esc 清空', async ({ page }) => {
   await openOutline(page, [node('a', 'alpha')]);
+  const searchBox = page.locator('.search-box');
+  await expect(searchBox).not.toHaveClass(/expanded/);
+
   await focusText(page, 'a', 0);
   await page.keyboard.press('ControlOrMeta+f');
   expect(await page.evaluate(() => document.activeElement?.className)).toBe('search-input');
+  await expect(searchBox).toHaveClass(/expanded/);
 
   await page.keyboard.type('alp');
   await expect(page.locator('.node[data-id="a"]')).toHaveClass(/search-hit/);
   await page.keyboard.press('Escape');
   await expect(page.locator('.node[data-id="a"]')).not.toHaveClass(/search-hit/);
+  await expect(searchBox).not.toHaveClass(/expanded/);
+});
+
+test('搜索图标点击展开，空搜索失焦后收起，有查询时保持展开', async ({ page }) => {
+  await openOutline(page, [node('a', 'alpha')]);
+  const searchBox = page.locator('.search-box');
+  const searchInput = page.locator('.search-input');
+
+  await page.getByRole('button', { name: 'Search nodes' }).click();
+  await expect(searchInput).toBeFocused();
+  await expect(searchBox).toHaveClass(/expanded/);
+
+  await page.keyboard.type('alp');
+  await focusText(page, 'a', 0);
+  await expect(searchBox).toHaveClass(/expanded/);
+
+  await searchInput.fill('');
+  await focusText(page, 'a', 0);
+  await expect(searchBox).not.toHaveClass(/expanded/);
 });
 
 /** 用 pointer 事件把某个节点的 bullet 拖到目标行的下沿。 */
@@ -192,6 +217,38 @@ test('粘贴：无列表语法的多行文本按行拆成兄弟节点', async ({
   await waitForEdit(page);
   // 空节点被收掉（本地乐观更新已生效）
   expect(await textsInDom(page)).toEqual(['第一行', '第二行', '第三行']);
+});
+
+test('粘贴：混合普通文本和多个列表块时不丢任何内容', async ({ page }) => {
+  await openOutline(page, [node('a', '')]);
+  await focusText(page, 'a', 0);
+
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData('text/plain', '开头说明\n- 一级\n  - 二级\n\n中间说明\n- 末尾节点\n结尾说明');
+    document
+      .querySelector('.node[data-id="a"] [data-field="text"]')!
+      .dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+
+  await waitForEdit(page);
+  expect(await textsInDom(page)).toEqual(['开头说明', '一级', '二级', '中间说明', '末尾节点', '结尾说明']);
+});
+
+test('粘贴：CR 和 Unicode 换行同样拆成独立节点', async ({ page }) => {
+  await openOutline(page, [node('a', '')]);
+  await focusText(page, 'a', 0);
+
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData('text/plain', '第一行\r第二行\u2028第三行\u2029第四行');
+    document
+      .querySelector('.node[data-id="a"] [data-field="text"]')!
+      .dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+
+  await waitForEdit(page);
+  expect(await textsInDom(page)).toEqual(['第一行', '第二行', '第三行', '第四行']);
 });
 
 test('复制：光标所在节点的整棵子树序列化为 markdown', async ({ page }) => {

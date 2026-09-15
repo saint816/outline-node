@@ -4,6 +4,7 @@
 // 存 webview 内存，在侧栏展开不会折叠正文。渲染项封顶 MAX_ITEMS，护住 refresh patch 的性能红线。
 
 import type { OutlineNode } from '../core/model.js';
+import { dividerKind } from '../core/divider.js';
 import { cssEscape, resolvePlacement } from './dnd.js';
 import { t } from './i18n.js';
 
@@ -282,6 +283,8 @@ export class SidebarView {
     // 只有大纲树行可拖拽（星标书签不参与结构移动）；data-id 两区都挂，供 refocus 定位
     row.dataset.id = node.id;
     if (draggable) row.classList.add('sidebar-draggable');
+    const divider = dividerKind(node);
+    if (divider !== null) row.classList.add('sidebar-divider', `sidebar-divider-${divider}`);
 
     // 展开/折叠三角（大纲树与星标区都可展开；有子节点时显示）
     if (node.children.length > 0) {
@@ -304,7 +307,7 @@ export class SidebarView {
     const label = document.createElement('button');
     label.type = 'button';
     label.className = 'sidebar-label';
-    const text = node.text.trim() === '***' ? t('divider.label') : node.text.trim() === '' ? t('node.empty') : node.text;
+    const text = divider === 'plain' ? t('divider.label') : node.text.trim() === '' ? t('node.empty') : node.text;
     label.textContent = text;
     label.title = text;
     label.addEventListener('click', () => this.cb.onNavigate(node.id, section));

@@ -30,9 +30,8 @@ import { HelpOverlay } from './help.js';
 import { closeLightbox, handleImageClick, isLightboxOpen, onLightboxClosed } from './lightbox.js';
 import { hasInlineMarkup, isRendered, renderInline, sourceOffset, toSourceMode } from './inline.js';
 import { dividerKind } from '../core/divider.js';
-import { parseLink, setLink, toggleLink, toggleMarker, type Marker } from './format.js';
+import { parseLink, setLink, toggleLink, toggleMarker } from './format.js';
 import { FormatBar } from './formatBar.js';
-import { isMac } from './platform.js';
 import { SlashMenu } from './slashMenu.js';
 import { NodeSelection, handleSelectionKeydown } from './selection.js';
 import { ZoomHistory } from './zoomHistory.js';
@@ -440,13 +439,6 @@ root.addEventListener('keydown', (event) => {
     // textarea 的行结构，会在代码块中间行就把光标弹到别的节点去。
     if (CODE_LOCAL_KEYS.has(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey) return;
   }
-  // 排版快捷键（加粗 / 高亮）：在 keymap 之前，免得被别的分支吃掉
-  const marker = event.isComposing ? null : formatKeyOf(event);
-  if (marker !== null) {
-    event.preventDefault();
-    applyFormat((text, start, end) => toggleMarker(text, start, end, marker));
-    return;
-  }
   // Esc 收起排版工具条（不阻断后续：Esc 还要退多选 / 清搜索）
   if (event.key === 'Escape') formatBar.hide();
   // 斜杠菜单激活时优先吃掉导航键（↑↓/Enter/Tab/Esc），keymap 不再处理
@@ -711,23 +703,7 @@ function adjacentNodeId(blockEl: HTMLElement): string | null {
   return pick('previousElementSibling') ?? pick('nextElementSibling');
 }
 
-/**
- * 隐藏 / 显示已完成的键位。webview 的按键会被转发给工作台做快捷键解析，所以只能挑
- * VS Code 没占用的组合——已被实机否掉两轮：
- *   `Cmd+O`      → VS Code「打开文件」
- *   `Cmd+Alt+O`  → Remote 扩展「Open Remote Window」
- * 现在按平台分：mac 用 `Ctrl+O`（mac 版 VS Code 未绑定）；Windows/Linux 上 `Ctrl+O`
- * 恰恰是「打开文件」，退回 `Ctrl+Alt+O`。用 `e.code` 而非 `e.key` 判定，免受 Option
- * 改字符 / 键盘布局影响。
- */
-export function isHideCompletedKey(e: KeyboardEvent): boolean {
-  if (e.code !== 'KeyO' || e.metaKey || e.shiftKey) return false;
-  return isMac() ? e.ctrlKey && !e.altKey : e.ctrlKey && e.altKey;
-}
-
 // 帮助浮层：? 开关（焦点不在可编辑元素里时，避免吞掉输入的「?」），Esc 关闭。
-// 隐藏已完成也挂在 document 上——隐藏后被隐藏节点的焦点会掉到 body，root 级监听收不到
-// 第二次按键（BUG-002 焦点陷阱）。document 级则焦点在哪都能触发。
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && isLightboxOpen()) {
     closeLightbox();
@@ -735,11 +711,6 @@ document.addEventListener('keydown', (event) => {
   }
   if (event.key === 'Escape' && help.isOpen()) {
     help.close();
-    return;
-  }
-  if (isHideCompletedKey(event)) {
-    event.preventDefault();
-    toggleHideCompletedWithFocus();
     return;
   }
   if (event.key === '?' && !isEditableTarget(event.target)) {
@@ -937,20 +908,6 @@ function syncFormatBar(): void {
 
 document.addEventListener('selectionchange', syncFormatBar);
 window.addEventListener('scroll', () => formatBar.hide(), true);
-
-/**
- * 排版快捷键。**只能挑 VS Code 没占的组合**：webview 的按键会转发给工作台做绑定解析，
- * preventDefault 拦不住（`Cmd+B` = 切换侧边栏）。故分平台，与隐藏已完成同一套路数：
- * mac 用 Ctrl+B / Ctrl+H，其余平台那两个被「侧边栏 / 全局替换」占着，改用 Ctrl+Alt+…。
- */
-function formatKeyOf(e: KeyboardEvent): Marker | null {
-  if (e.metaKey || e.shiftKey) return null;
-  const combo = isMac() ? e.ctrlKey && !e.altKey : e.ctrlKey && e.altKey;
-  if (!combo) return null;
-  if (e.code === 'KeyB') return '**';
-  if (e.code === 'KeyH') return '==';
-  return null;
-}
 
 // 行内 Markdown 的显示态 / 源码态切换（见 inline.ts）。两件事都必须发生在浏览器
 // 定位光标**之前**，所以挂 pointerdown 捕获阶段，不能等 focusin：

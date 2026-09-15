@@ -42,10 +42,13 @@ function onPaste(event: ClipboardEvent, ctx: ClipboardContext): void {
   }
 
   const text = event.clipboardData?.getData('text/plain') ?? '';
+  // 外部应用的纯文本换行不一定是 LF：部分原生控件会给 CR，也有富文本来源使用
+  // Unicode line / paragraph separator。先统一，避免浏览器把整段塞进一个节点。
+  const normalizedText = text.replace(/\r\n?|\u2028|\u2029/g, '\n');
 
   // 选中文字时粘贴一条 URL → 直接变成 [选中的字](url)。
   // linkSelection 自己判断有没有选区：没选区返回 false，粘贴照常走浏览器默认插入。
-  if (caret.field === 'text' && looksLikeUrl(text) && ctx.linkSelection(text.trim())) {
+  if (caret.field === 'text' && looksLikeUrl(normalizedText) && ctx.linkSelection(normalizedText.trim())) {
     event.preventDefault();
     return;
   }
@@ -53,10 +56,10 @@ function onPaste(event: ClipboardEvent, ctx: ClipboardContext): void {
   // SPEC-GAP: docs/05 说 paste 一律 preventDefault 后自己插入。单行文本没必要——
   // contenteditable="plaintext-only" 本身就杜绝了富文本，交给浏览器插入反而不会碰光标。
   // 只接管「多行」这一种浏览器会把节点写成多行的情况；note 字段本就是多行，也放过。
-  if (caret.field === 'note' || !text.includes('\n')) return;
+  if (caret.field === 'note' || !normalizedText.includes('\n')) return;
 
   event.preventDefault();
-  const nodes = parseClipboardNodes(text, ctx);
+  const nodes = parseClipboardNodes(normalizedText, ctx);
   if (nodes.length === 0) return;
 
   const location = ctx.store.locationOf(caret.nodeId);
@@ -138,20 +141,28 @@ function insertPastedImage(file: File, ctx: ClipboardContext, caret: CaretPos): 
   reader.readAsDataURL(file);
 }
 
-/** 剪贴板文本 → 子树。含列表语法就按缩进还原层级，否则按行拆成兄弟节点。 */
+/**
+ * 剪贴板文本 → 子树。列表块按缩进还原层级，列表之间的普通文本也逐行保留为节点。
+ * 不能只拿第一个 ListBlock：外部网页/文档常产生「标题 + 列表 + 尾注」混合文本，
+ * 丢掉 RawBlock 就是在静默丢用户剪贴板内容。
+ */
 function parseClipboardNodes(text: string, ctx: ClipboardContext): OutlineNode[] {
   const indentUnit = ctx.store.doc.indentUnit;
   const doc = parseOutline(text, { defaultIndent: indentUnit });
-  const listBlock = doc.blocks.find((block) => block.kind === 'list');
-  if (listBlock && listBlock.kind === 'list' && listBlock.roots.length > 0) {
-    return listBlock.roots.map(stripRaw);
+  const nodes: OutlineNode[] = [];
+  for (const block of doc.blocks) {
+    if (block.kind === 'list') {
+      nodes.push(...block.roots.map(stripRaw));
+      continue;
+    }
+    nodes.push(
+      ...block.lines
+        .map((line) => line.trim())
+        .filter((line) => line !== '')
+        .map((line) => bareNode(line, block.id)),
+    );
   }
-
-  return text
-    .split(/\r\n|\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== '')
-    .map((line) => bareNode(line, doc.blocks[0]?.id ?? ''));
+  return nodes;
 }
 
 function bareNode(text: string, seed: string): OutlineNode {

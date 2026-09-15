@@ -47,12 +47,12 @@ Your notes are just a standard `.md` indented list — Obsidian and Logseq read 
 | `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` | Undo / redo (VS Code native) |
 | `Cmd/Ctrl+F` | Focus the outline search box |
 | `Shift+↑` / `Shift+↓` | Extend the node selection |
-| `Ctrl+B` / `Ctrl+H` | Bold / highlight the selected text (`Ctrl+Alt+B` / `Ctrl+Alt+H` off macOS) |
-| `Ctrl+O` | Hide / show completed nodes (`Ctrl+Alt+O` off macOS) |
 | `?` | Show all shortcuts |
 | `Esc` | Clear the search / cancel a drag |
 
 Use `Cmd` on macOS, `Ctrl` on Windows and Linux.
+
+Use the floating selection toolbar for bold and highlight, and the top `✓` button to hide or show completed nodes. OutlineNode no longer claims `Ctrl` / `Ctrl+Alt` chords for these actions, avoiding conflicts with VS Code, input methods and system shortcuts. Search stays as an icon until clicked or focused with `Cmd/Ctrl+F`; an empty search collapses again on blur.
 
 The formatting and hide-completed keys deliberately avoid `Cmd+B` / `Cmd+O`: webview keystrokes are handed to the workbench for keybinding resolution, so VS Code's own bindings (toggle sidebar, open file) win no matter what the webview does. The floating toolbar that appears over selected text is the primary entry point for formatting.
 

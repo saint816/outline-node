@@ -282,43 +282,20 @@ test('分区三角与节点三角字体一致', async ({ page }) => {
   );
 });
 
-test('Ctrl+O 隐藏已完成节点（连整棵子树），再按恢复', async ({ page }) => {
+test('顶部按钮隐藏已完成节点（连整棵子树），再按恢复', async ({ page }) => {
   await openOutline(page, [node('a', 'Done', [node('a1', 'child')]), node('b', 'Todo')]);
 
   await focusText(page, 'a', 0);
   await page.keyboard.press('Control+Enter');
   await expect(page.locator('.node[data-id="a"] > .node-row')).toHaveClass(/checked/);
 
-  await focusText(page, 'b', 0);
-  await page.keyboard.press('Control+o');
+  const toggle = page.getByRole('button', { name: 'Hide completed' });
+  await toggle.click();
   await expect(page.locator('.node[data-id="a"]')).toBeHidden();
   await expect(page.locator('.node[data-id="a1"]')).toBeHidden();
   await expect(page.locator('.node[data-id="b"]')).toBeVisible();
 
-  await page.keyboard.press('Control+o');
-  await expect(page.locator('.node[data-id="a"]')).toBeVisible();
-});
-
-test('焦点在完成节点上按 Ctrl+O：隐藏后焦点迁到可见节点，再按能恢复（BUG-002）', async ({
-  page,
-}) => {
-  await openOutline(page, [node('a', 'Done'), node('b', 'Todo')]);
-
-  // 让完成节点 a 自己持有焦点
-  await focusText(page, 'a', 0);
-  await page.keyboard.press('Control+Enter');
-  await focusText(page, 'a', 0);
-
-  // 第一次：隐藏 a。焦点不能留在被隐藏的 a（否则 root 级监听收不到下次按键）
-  await page.keyboard.press('Control+o');
-  await expect(page.locator('.node[data-id="a"]')).toBeHidden();
-  const focusedNodeId = await page.evaluate(
-    () => document.activeElement?.closest('.node')?.getAttribute('data-id') ?? null,
-  );
-  expect(focusedNodeId).toBe('b'); // 焦点已迁到可见节点，不在 body
-
-  // 第二次：同一快捷键必须能恢复显示（陷阱已解）
-  await page.keyboard.press('Control+o');
+  await page.getByRole('button', { name: 'Show completed' }).click();
   await expect(page.locator('.node[data-id="a"]')).toBeVisible();
 });
 
@@ -401,9 +378,7 @@ test('侧栏：节点文本清空后 label 回落到 (empty node) 占位', async
   await expect(sidebar.locator('.sidebar-label')).toHaveText(['Home', '(empty node)']);
 });
 
-// 键位随平台变（见 webview/platform.ts）：mac 用 Ctrl+O（VS Code 未占），
-// Windows/Linux 上 Ctrl+O 是「打开文件」，退回 Ctrl+Alt+O。
-test('非 mac 平台：隐藏已完成走 Ctrl+Alt+O，裸 Ctrl+O 不触发', async ({ page }) => {
+test('隐藏已完成不劫持 Ctrl/Alt 快捷键，使用顶部按钮', async ({ page }) => {
   await openOutline(page, [node('a', 'Done'), node('b', 'Todo')]);
   await page.evaluate(() => {
     document.documentElement.dataset.platform = 'other';
@@ -414,11 +389,29 @@ test('非 mac 平台：隐藏已完成走 Ctrl+Alt+O，裸 Ctrl+O 不触发', as
   await expect(page.locator('.node[data-id="a"] > .node-row')).toHaveClass(/checked/);
 
   await focusText(page, 'b', 0);
-  await page.keyboard.press('Control+o'); // 该平台上这是「打开文件」，插件不该抢
+  await page.keyboard.press('Control+o');
   await expect(page.locator('.node[data-id="a"]')).toBeVisible();
 
   await page.keyboard.press('Control+Alt+o');
+  await expect(page.locator('.node[data-id="a"]')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Hide completed' }).click();
   await expect(page.locator('.node[data-id="a"]')).toBeHidden();
+});
+
+test('侧栏分隔线保持单行，标题与横线垂直居中', async ({ page }) => {
+  await openOutline(page, [node('a', '***'), { ...node('b', '带标题的'), note: '***' }]);
+  const plain = page.locator('.sidebar-item[data-id="a"]');
+  const titled = page.locator('.sidebar-item[data-id="b"]');
+
+  await expect(plain).toHaveClass(/sidebar-divider-plain/);
+  await expect(titled).toHaveClass(/sidebar-divider-title/);
+  await expect(plain.locator('.sidebar-label')).toHaveText('Divider');
+  await expect(titled.locator('.sidebar-label')).toHaveText('带标题的');
+  const [rowBox, labelBox] = await Promise.all([titled.boundingBox(), titled.locator('.sidebar-label').boundingBox()]);
+  expect(rowBox).not.toBeNull();
+  expect(labelBox).not.toBeNull();
+  expect(Math.abs(rowBox!.y + rowBox!.height / 2 - (labelBox!.y + labelBox!.height / 2))).toBeLessThanOrEqual(1);
 });
 
 test('星标节点可展开/折叠其子节点（星标区非扁平）', async ({ page }) => {

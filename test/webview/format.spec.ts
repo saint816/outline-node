@@ -95,29 +95,16 @@ test('链接弹层可编辑现有链接，Esc 取消时恢复原选区', async (
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('[旧标题](https://old.example)');
 });
 
-test('mac 快捷键 Ctrl+B / Ctrl+H 施加加粗与高亮', async ({ page }) => {
+test('格式化不劫持 Ctrl/Alt 快捷键，使用浮动工具条', async ({ page }) => {
   await openOutline(page, [node('a', 'abc def')]);
-  await selectText(page, 'a', 4, 7);
-
-  await page.keyboard.press('Control+b');
-  await expect(textEl(page)).toHaveText('abc **def**');
-
-  await page.keyboard.press('Control+h');
-  await expect(textEl(page)).toHaveText('abc **==def==**');
-});
-
-test('非 mac 平台走 Ctrl+Alt+B，裸 Ctrl+B 不触发（那是 VS Code 的切换侧边栏）', async ({ page }) => {
-  await openOutline(page, [node('a', 'abc def')]);
-  await page.evaluate(() => document.documentElement.setAttribute('data-platform', 'win'));
   await selectText(page, 'a', 4, 7);
 
   await page.keyboard.press('Control+b');
   await expect(textEl(page)).toHaveText('abc def');
 
-  // Ctrl+B 不归我们管，浏览器（macOS 的 Emacs 键位）会拿它移光标 → 选区没了，重选一次
   await selectText(page, 'a', 4, 7);
   await page.keyboard.press('Control+Alt+b');
-  await expect(textEl(page)).toHaveText('abc **def**');
+  await expect(textEl(page)).toHaveText('abc def');
 });
 
 /** 合成一次纯文本 paste。 */
