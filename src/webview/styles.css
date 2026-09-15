@@ -1370,6 +1370,18 @@ body {
 .divider-plain > .text:not(:focus)::after { display: none; }
 .divider > .bullet { opacity: 0; }
 .divider:hover > .bullet, .divider:focus-within > .bullet { opacity: 1; }
-.divider-tools { position: absolute; right: 0; top: -18px; display: flex; gap: 4px; opacity: 0; pointer-events: none; }
+.divider-tools {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  padding-left: 6px;
+  background: var(--vscode-editor-background);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
 .divider:hover > .divider-tools, .divider:focus-within > .divider-tools { opacity: 1; pointer-events: auto; }
-.divider-tools button { font: inherit; font-size: 11px; color: var(--vscode-descriptionForeground); background: var(--vscode-editor-background); border: 1px solid var(--vscode-widget-border, var(--vscode-descriptionForeground)); border-radius: 3px; cursor: pointer; }
+.divider-tools button { min-height: 24px; padding: 1px 6px; font: inherit; font-size: 11px; color: var(--vscode-descriptionForeground); background: var(--vscode-editor-background); border: 1px solid var(--vscode-widget-border, var(--vscode-descriptionForeground)); border-radius: 3px; cursor: pointer; }

@@ -28,13 +28,21 @@ test('slash creates titled divider and Enter inserts sibling', async ({ page }) 
 });
 
 test('shortcut, add title, external refresh', async ({ page }) => {
-  await openOutline(page, [node('a', '')]);
+  await openOutline(page, [node('before', 'Previous node'), node('a', '')]);
   await focusText(page, 'a', 0);
   await page.keyboard.type('---');
   await page.keyboard.press('Enter');
   await expect(page.locator('.divider-plain')).toHaveCount(1);
-  await page.locator('.divider-plain').hover();
-  await page.getByRole('button', { name: 'Add title' }).click();
+  const divider = page.locator('.divider-plain');
+  await divider.hover();
+  const addTitle = divider.getByRole('button', { name: 'Add title' });
+  await expect(addTitle).toBeVisible();
+  const [rowBox, buttonBox] = await Promise.all([divider.boundingBox(), addTitle.boundingBox()]);
+  expect(rowBox).not.toBeNull();
+  expect(buttonBox).not.toBeNull();
+  expect(buttonBox!.y).toBeGreaterThanOrEqual(rowBox!.y);
+  expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(rowBox!.y + rowBox!.height);
+  await addTitle.click();
   await page.keyboard.insertText('New title');
   await expect(page.locator('.divider-title > .text')).toHaveText('New title');
   await page.locator('.search-input').focus();
