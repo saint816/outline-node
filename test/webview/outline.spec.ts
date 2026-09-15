@@ -144,6 +144,8 @@ test('Shift+Enter 创建 note 并聚焦，note 内换行保留', async ({ page }
   await page.keyboard.type('第一行');
   await page.keyboard.press('Shift+Enter');
   await page.keyboard.type('第二行');
+  // 显式失焦会走产品的 flushPending，避免 CI 负载下依赖 300ms 防抖计时。
+  await page.locator('.search-input').focus();
 
   // 等目标 setNote 落定（防抖），别用固定 sleep。超时给足余量——并行负载下 CPU 争用会拖慢
   // 防抖 flush，短超时会偶发失败（这是等待条件，不是 sleep，达成即返回，不浪费时间）。
