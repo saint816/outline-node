@@ -42,7 +42,7 @@ test('shortcut, add title, external refresh', async ({ page }) => {
   await expect(page.locator('.divider-title > .text')).toHaveText('External');
 });
 
-test('IME title composition and screenshot', async ({ page }) => {
+test('IME title composition preserves the divider editor', async ({ page }) => {
   await openOutline(page, [node('a', '***'), { ...node('b', '带标题的'), note: '***' }, node('c', 'Next')]);
   await focusText(page, 'b', 4);
   const cdp = await page.context().newCDPSession(page);
@@ -51,7 +51,6 @@ test('IME title composition and screenshot', async ({ page }) => {
   await cdp.send('Input.insertText', { text: '中文' });
   await expect(page.locator('.divider-title > .text')).toHaveText('带标题的中文');
   await page.locator('.search-input').focus();
-  await page.screenshot({ path: '/private/tmp/outline-divider-preview.png' });
 });
 
 test('existing note is protected', async ({ page }) => {
