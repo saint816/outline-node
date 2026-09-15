@@ -50,6 +50,8 @@ export function restoreCaret(pos: CaretPos): void; // offset clamp 到新文本�
 
 ## IME 守卫（ime.ts）— 红线 4
 
+分隔线（1.2.0）：`/divider` 将空节点转换为横线，有文字节点转换为居中标题横线；已有备注、任务、镜像不提供转换。`---` + Enter 转换并创建下一节点。转换复用 setText/setNote，dispatchAll 合为一次撤销。标题直接编辑；悬停/聚焦提供“添加标题”“转为普通节点”。行首 Backspace 先取消样式，保留子节点。横线 Enter 创建后续同级，zoom 根创建首子节点。Shift+Enter 不打开横线备注。分隔线不支持单节点完成切换，多选完成后自然恢复普通任务显示。输入期间不重建 text DOM，IME 期间不切换布局。
+
 ```ts
 export const ime = { composing: boolean, pendingRefresh: H2W | null };
 ```

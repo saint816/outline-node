@@ -27,7 +27,7 @@ export class Breadcrumb {
     for (let i = 0; i < trail.length; i++) {
       parts.push(separator());
       const node = trail[i];
-      const label = node.text.trim() === '' ? t('node.empty') : node.text;
+      const label = node.text.trim() === '***' ? t('divider.label') : node.text.trim() === '' ? t('node.empty') : node.text;
       parts.push(i === trail.length - 1 ? current(label) : this.crumb(label, node.id));
     }
     this.el.replaceChildren(...parts);

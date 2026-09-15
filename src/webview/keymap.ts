@@ -14,6 +14,7 @@ import {
 import { emptyFence, parseFence } from './codeFence.js';
 import { isComposingEvent } from './ime.js';
 import type { Store } from './store.js';
+import { canMakeDivider, dividerKind } from '../core/divider.js';
 
 export interface KeymapContext {
   store: Store;
@@ -89,6 +90,8 @@ export function handleKeydown(e: KeyboardEvent, ctx: KeymapContext): void {
 
   if (mod && e.key === 'Enter') {
     e.preventDefault();
+    const node = ctx.store.findNode(caret.nodeId);
+    if (node && dividerKind(node)) return;
     ctx.setNextCaret(caret);
     ctx.store.dispatch({ op: 'toggleChecked', id: caret.nodeId });
     return;
@@ -156,6 +159,25 @@ function onEnter(caret: CaretPos, ctx: KeymapContext): void {
   const node = ctx.store.findNode(caret.nodeId);
   if (!node) return;
 
+  if (caret.field === 'text' && node.text === '---' && canMakeDivider(node)) {
+    const id = ctx.newId();
+    ctx.setNextCaret({ nodeId: id, field: 'text', offset: 0 });
+    ctx.store.dispatchAll([
+      { op: 'setText', id: node.id, text: '***' },
+      ...(ctx.store.zoomRoot === node.id
+        ? [{ op: 'insertSubtree' as const, parentId: node.id, index: 0, nodes: [{ id, text: '', checked: null, note: null, blockId: null, mirror: null, children: [], raw: null }] }]
+        : [{ op: 'split' as const, id: node.id, offset: 3, newId: id }]),
+    ]);
+    return;
+  }
+
+  if (caret.field === 'text' && dividerKind(node) && ctx.store.zoomRoot !== node.id) {
+    const id = ctx.newId();
+    ctx.setNextCaret({ nodeId: id, field: 'text', offset: 0 });
+    ctx.store.dispatch({ op: 'split', id: node.id, offset: node.text.length, newId: id });
+    return;
+  }
+
   // note 里回车 → 回到正文末尾
   if (caret.field === 'note') {
     focusNode(node.id, 'text', node.text.length);
@@ -222,6 +244,7 @@ function onEnter(caret: CaretPos, ctx: KeymapContext): void {
 function onShiftEnter(caret: CaretPos, ctx: KeymapContext): void {
   const node = ctx.store.findNode(caret.nodeId);
   if (!node) return;
+  if (dividerKind(node)) return;
 
   if (node.note === null) {
     ctx.setNextCaret({ nodeId: node.id, field: 'note', offset: 0 });
@@ -245,6 +268,15 @@ function onTab(caret: CaretPos, ctx: KeymapContext, shift: boolean): void {
 function onMerge(caret: CaretPos, ctx: KeymapContext): void {
   const node = ctx.store.findNode(caret.nodeId);
   if (!node) return;
+  const divider = dividerKind(node);
+  if (divider) {
+    ctx.setNextCaret({ nodeId: node.id, field: 'text', offset: 0 });
+    ctx.store.dispatchAll([
+      { op: 'setText', id: node.id, text: divider === 'plain' ? '' : node.text },
+      { op: 'setNote', id: node.id, note: null },
+    ]);
+    return;
+  }
   if (node.children.length > 0) {
     // 空父节点是结构壳：删壳但保留内容。逆序 outdent 才能维持孩子原顺序；
     // dispatchAll 把整个动作合成一个 VS Code undo 步。

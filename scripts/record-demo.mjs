@@ -1,3 +1,4 @@
+/* global process, setTimeout, window, console */
 // 录制 Marketplace 首屏演示 GIF（英文版）。
 // 用法: 先 npm run build，然后 node scripts/record-demo.mjs
 // 产物: /tmp/outline-demo/demo.webm → ffmpeg 转 GIF

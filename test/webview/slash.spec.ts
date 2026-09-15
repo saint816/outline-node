@@ -26,14 +26,14 @@ async function waitForOp(
   );
 }
 
-test('空标题节点的 / 菜单只提供 Code', async ({ page }) => {
+test('空标题节点的 / 菜单提供 Divider 和 Code', async ({ page }) => {
   await openOutline(page, [node('a', '')]);
   await focusText(page, 'a', 0);
   await page.keyboard.type('/');
 
   const menu = page.locator('.slash-menu');
   await expect(menu).toBeVisible();
-  await expect(menu.locator('.slash-item')).toHaveText([/Code block/]);
+  await expect(menu.locator('.slash-item')).toHaveText([/Divider/, /Code block/]);
 });
 
 test('/code 可先创建代码块；空标题时聚焦必填标题行', async ({ page }) => {

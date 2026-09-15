@@ -119,6 +119,8 @@ host 侧的 mirror tree（带 raw）才是序列化依据；webview 树只服务
 
 ## 不变式（测试必须覆盖）
 
+分隔线（1.2.0）仍是 OutlineNode，不新增字段：正文恰为 `***` 且 note 为 null 时显示横线；note 恰为 `***` 时正文作为居中标题（空正文可继续填写）。只对 checked=null、mirror=null 生效，子节点保留。Markdown 为 `- ***` 或 `- 标题` 后接缩进的 `***` 续行；居中排版是本插件的显示增强。只匹配三个星号（允许两侧空白），不匹配代码块或多行备注，不自动重写历史内容。
+
 1. 任何时刻 `OutlineDoc` 中所有 `id` 全局唯一（跨 block）。
 2. `RawBlock.lines` 与 `RawSource.lines` 永不被任何 op 修改（只会整体丢弃或原样输出）。**唯一例外：围栏代码块 RawBlock**——用户显式编辑时经 `setRawBlock` 替换其行，创建时经 `toCodeBlock` 生成（见下「代码块：可编辑的 RawBlock」）。frontmatter / 标题 / 正文段落 / 图片 / 空行等其余一切 RawBlock 仍严格不可变。红线 1（未被编辑内容字节级 round-trip）不受影响：只有被用户改动的代码块才重生成。
 3. `mirror !== null` 的节点：`children` 恒为空数组、`note` 恒为 null（镜像行是纯引用行，见 06）。

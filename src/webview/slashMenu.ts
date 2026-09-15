@@ -13,6 +13,7 @@ import { emptyFence } from './codeFence.js';
 import { t } from './i18n.js';
 import type { OutlineNode } from '../core/model.js';
 import type { Store } from './store.js';
+import { canMakeDivider } from '../core/divider.js';
 
 export interface SlashMenuContext {
   store: Store;
@@ -23,7 +24,7 @@ export interface SlashMenuContext {
 }
 
 interface SlashItem {
-  key: 'code';
+  key: 'code' | 'divider';
   label: () => string;
   hint?: () => string;
   keywords: string[];
@@ -31,6 +32,12 @@ interface SlashItem {
 }
 
 const ITEMS: SlashItem[] = [
+  {
+    key: 'divider',
+    label: () => t('divider.label'),
+    keywords: ['divider', 'separator', 'hr', '分隔线'],
+    enabled: (node) => canMakeDivider(node),
+  },
   {
     key: 'code',
     label: () => t('slash.codeBlock'),
@@ -168,7 +175,10 @@ export class SlashMenu {
     if (idx === undefined) return;
     e.preventDefault(); // 别让正文失焦
     const item = this.results[Number(idx)];
-    if (item) this.choose();
+    if (item) {
+      this.selected = Number(idx);
+      this.choose();
+    }
   }
 
   private choose(): void {
@@ -178,6 +188,16 @@ export class SlashMenu {
 
     // 先删掉 /query，再转换；光标落到删除处
     const newText = removeSlashToken(node.text, this.start, this.end);
+
+    if (this.results[this.selected]?.key === 'divider') {
+      const text = newText.trim() === '' ? '***' : newText;
+      this.ctx.setNextCaret({ nodeId: node.id, field: 'text', offset: text.length });
+      this.ctx.store.dispatchAll([
+        { op: 'setText', id: node.id, text },
+        { op: 'setNote', id: node.id, note: newText.trim() === '' ? null : '***' },
+      ]);
+      return this.close();
+    }
 
     // 一律挂到该节点下（见 docs/05「代码块」），顶层空壳也不例外——转成文档级块会丢掉
     // bullet，拖不动也缩进不了（实机反馈）。一次 dispatchAll = 一个 undo 步

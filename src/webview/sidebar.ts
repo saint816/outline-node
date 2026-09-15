@@ -103,7 +103,7 @@ export class SidebarView {
   syncText(id: string, text: string): void {
     const labels = this.labels.get(id);
     if (labels === undefined) return;
-    const shown = text.trim() === '' ? t('node.empty') : text;
+    const shown = text.trim() === '***' ? t('divider.label') : text.trim() === '' ? t('node.empty') : text;
     for (const label of labels) {
       label.textContent = shown;
       label.title = shown;
@@ -304,7 +304,7 @@ export class SidebarView {
     const label = document.createElement('button');
     label.type = 'button';
     label.className = 'sidebar-label';
-    const text = node.text.trim() === '' ? t('node.empty') : node.text;
+    const text = node.text.trim() === '***' ? t('divider.label') : node.text.trim() === '' ? t('node.empty') : node.text;
     label.textContent = text;
     label.title = text;
     label.addEventListener('click', () => this.cb.onNavigate(node.id, section));

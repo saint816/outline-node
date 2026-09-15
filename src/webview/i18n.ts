@@ -25,6 +25,9 @@ export type MessageKey =
   | 'breadcrumb.ariaLabel'
   | 'breadcrumb.home'
   | 'node.empty'
+  | 'divider.label'
+  | 'divider.addTitle'
+  | 'divider.remove'
   | 'sidebar.ariaLabel'
   | 'sidebar.starred'
   | 'sidebar.empty'
@@ -102,6 +105,9 @@ const EN: Record<MessageKey, string> = {
   'breadcrumb.ariaLabel': 'Zoom path',
   'breadcrumb.home': 'Home',
   'node.empty': '(empty node)',
+  'divider.label': 'Divider',
+  'divider.addTitle': 'Add title',
+  'divider.remove': 'Turn into text',
   'sidebar.ariaLabel': 'Outline navigation',
   'sidebar.starred': 'Starred',
   'sidebar.empty': 'No nodes yet',
@@ -180,6 +186,9 @@ const ZH: Record<MessageKey, string> = {
   'breadcrumb.ariaLabel': 'zoom 路径',
   'breadcrumb.home': '全部',
   'node.empty': '(空节点)',
+  'divider.label': '分隔线',
+  'divider.addTitle': '添加标题',
+  'divider.remove': '转为普通节点',
   'sidebar.ariaLabel': '大纲导航',
   'sidebar.starred': '星标',
   'sidebar.empty': '还没有节点',

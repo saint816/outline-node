@@ -12,6 +12,8 @@ Your notes are just a standard `.md` indented list — Obsidian and Logseq read 
 
 ## Features
 
+- **Dividers** — `/divider` creates a horizontal rule, or a centered rule title from existing text. Type `---` then Enter for a quick divider. Hover to add a title or turn it back into text. Stored as `- ***`, or a title with an indented `***` continuation; other Markdown readers display a title and rule, without the centered styling.
+
 - **Unlimited nesting** — `Enter` to split, `Tab` / `Shift+Tab` to re-level, `Backspace` to merge
 - **Fold / unfold** — folding state lives in VS Code and is **never written to your files**
 - **Zoom in** — focus any subtree, with breadcrumb navigation

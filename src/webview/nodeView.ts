@@ -2,6 +2,8 @@
 // 只负责「一个节点 → 一段 DOM」，不感知树的增删改顺序（那是 renderer 的事）。
 
 import type { OutlineNode } from '../core/model.js';
+import { dividerKind } from '../core/divider.js';
+import { ime } from './ime.js';
 import { parseFence, renderFence, type CodeFence } from './codeFence.js';
 import { t } from './i18n.js';
 import { isImageOnly, parseImages, wholeLineImage, type ParsedImage } from './images.js';
@@ -36,6 +38,7 @@ export class NodeView {
   private imagesKey = '';
   /** 图片是否挂在节点行内（图片节点）而非行下方。 */
   private imagesInline = false;
+  private dividerTools: HTMLElement | null = null;
 
   constructor(
     node: OutlineNode,
@@ -85,6 +88,7 @@ export class NodeView {
     this.el.classList.toggle('folded', opts.folded);
 
     if (!opts.skipText) this.syncText(node);
+    if (!ime.composing) this.syncDivider(node);
 
     this.syncMirrorState(opts);
 
@@ -157,6 +161,34 @@ export class NodeView {
     }
     if (isRendered(this.textEl)) toSourceMode(this.textEl);
     if (this.textEl.textContent !== node.text) this.textEl.textContent = node.text;
+  }
+
+  private syncDivider(node: OutlineNode): void {
+    if (this.noteEl === document.activeElement) return;
+    const kind = dividerKind(node);
+    this.row.classList.toggle('divider', kind !== null);
+    this.row.classList.toggle('divider-plain', kind === 'plain');
+    this.row.classList.toggle('divider-title', kind === 'title');
+    if (kind === null) {
+      this.dividerTools?.remove();
+      this.dividerTools = null;
+      return;
+    }
+    if (this.dividerTools === null) {
+      this.dividerTools = div('divider-tools');
+      this.row.append(this.dividerTools);
+    }
+    if (this.dividerTools.dataset.kind === kind) return;
+    this.dividerTools.dataset.kind = kind;
+    const buttons: HTMLButtonElement[] = [];
+    for (const action of kind === 'plain' ? ['addTitle', 'remove'] as const : ['remove'] as const) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.dividerAction = action;
+      button.textContent = t(action === 'addTitle' ? 'divider.addTitle' : 'divider.remove');
+      buttons.push(button);
+    }
+    this.dividerTools.replaceChildren(...buttons);
   }
 
   private syncMirrorState(opts: UpdateOptions): void {
@@ -236,6 +268,16 @@ export class NodeView {
   }
 
   private syncNote(node: OutlineNode, opts: UpdateOptions): void {
+    if (dividerKind(node) !== null) {
+      if (this.noteEl === document.activeElement) return;
+      if (!ime.composing) {
+        this.noteEl?.remove();
+        this.noteEl = null;
+        this.noteCodeEl?.remove();
+        this.noteCodeEl = null;
+      }
+      return;
+    }
     const fence = node.note === null ? null : parseFence(node.note.split('\n'));
     if (fence !== null) {
       this.syncNoteCode(fence, node);

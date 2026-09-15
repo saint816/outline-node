@@ -29,6 +29,7 @@ import { Toolbar } from './toolbar.js';
 import { HelpOverlay } from './help.js';
 import { closeLightbox, handleImageClick, isLightboxOpen, onLightboxClosed } from './lightbox.js';
 import { hasInlineMarkup, isRendered, renderInline, sourceOffset, toSourceMode } from './inline.js';
+import { dividerKind } from '../core/divider.js';
 import { parseLink, setLink, toggleLink, toggleMarker, type Marker } from './format.js';
 import { FormatBar } from './formatBar.js';
 import { isMac } from './platform.js';
@@ -363,6 +364,8 @@ root.addEventListener('input', (event) => {
 function commitFieldText(target: HTMLElement): void {
   const id = target.closest<HTMLElement>('.node')?.dataset.id;
   if (!id) return;
+  const beforeNode = store.findNode(originalIdOf(id));
+  const beforeDivider = beforeNode ? dividerKind(beforeNode) : null;
   if (target.dataset.field === 'note') store.setNodeNote(id, target.innerText);
   else {
     const text = target.textContent ?? '';
@@ -370,6 +373,8 @@ function commitFieldText(target: HTMLElement): void {
     // setNodeText 走不 emit 的热路径，侧栏不会自动刷新——只戳一下同名 label，O(1)。
     sidebar.syncText(originalIdOf(id), text);
   }
+  const afterNode = store.findNode(originalIdOf(id));
+  if (beforeDivider !== (afterNode ? dividerKind(afterNode) : null)) render();
 }
 
 /** 代码块 textarea 改动 → 重建整块行（保留首尾围栏）→ setRawBlock。 */
@@ -787,6 +792,19 @@ document.addEventListener('mousedown', (event) => {
 root.addEventListener('click', (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+  const dividerAction = target.closest<HTMLElement>('[data-divider-action]');
+  if (dividerAction) {
+    const id = dividerAction.closest<HTMLElement>('.node')?.dataset.id;
+    const node = id ? store.findNode(originalIdOf(id)) : null;
+    if (!node || !dividerKind(node)) return;
+    const text = dividerKind(node) === 'plain' ? '' : node.text;
+    nextCaret = { nodeId: node.id, field: 'text', offset: text.length };
+    store.dispatchAll([
+      { op: 'setText', id: node.id, text },
+      { op: 'setNote', id: node.id, note: dividerAction.dataset.dividerAction === 'addTitle' ? '***' : null },
+    ]);
+    return;
+  }
   if (handleImageClick(target)) {
     event.preventDefault(); // 点图 = 放大预览，不落焦点、不 zoom
     return;
@@ -1172,8 +1190,12 @@ root.addEventListener('focusout', (event) => {
     // 用 DOM 实际内容判空（contenteditable 清空后 innerText 可能残留换行，别只比对存储值）
     const empty = el.innerText.trim() === '';
     setTimeout(() => {
-      if (!id || !empty) return;
+      if (!id || document.activeElement === el) return;
       const node = store.findNode(id);
+      if (!empty) {
+        if (node && dividerKind(node)) render();
+        return;
+      }
       if (node && node.note !== null) {
         store.setNodeNote(id, null);
         render();
